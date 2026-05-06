@@ -22,7 +22,7 @@ members = [
 exclude = ["crates/forge-plugin-sdk", "plugins", "fuzz"]
 
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 rust-version = "1.87"
 license = "Apache-2.0 OR MIT"
@@ -41,12 +41,12 @@ all = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 # Internal
-forge-ir = { path = "crates/forge-ir", version = "0.1.5" }
-forge-ir-bindgen = { path = "crates/forge-ir-bindgen", version = "0.1.5" }
-forge-parser = { path = "crates/forge-parser", version = "0.1.5" }
-forge-host = { path = "crates/forge-host", version = "0.1.5" }
-forge-pipeline = { path = "crates/forge-pipeline", version = "0.1.5" }
-forge-test-harness = { path = "crates/forge-test-harness", version = "0.1.5" }
+forge-ir = { path = "crates/forge-ir", version = "0.1.6" }
+forge-ir-bindgen = { path = "crates/forge-ir-bindgen", version = "0.1.6" }
+forge-parser = { path = "crates/forge-parser", version = "0.1.6" }
+forge-host = { path = "crates/forge-host", version = "0.1.6" }
+forge-pipeline = { path = "crates/forge-pipeline", version = "0.1.6" }
+forge-test-harness = { path = "crates/forge-test-harness", version = "0.1.6" }
 
 # Core
 serde = { version = "1.0", features = ["derive"] }

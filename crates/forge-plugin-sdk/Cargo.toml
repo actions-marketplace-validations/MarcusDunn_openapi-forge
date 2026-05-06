@@ -1,6 +1,6 @@
 [package]
 name = "forge-plugin-sdk"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 rust-version = "1.83"
 license = "Apache-2.0 OR MIT"
@@ -27,7 +27,7 @@ transformer = []
 generator = []
 
 [dependencies]
-forge-ir = { path = "../forge-ir", version = "0.1.5" }
+forge-ir = { path = "../forge-ir", version = "0.1.6" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
