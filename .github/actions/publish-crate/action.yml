@@ -1,0 +1,89 @@
+name: Publish crate
+description: Package, attest build provenance, and publish a single crate to crates.io.
+
+inputs:
+  crate:
+    description: Crate name (matches Cargo.toml [package].name)
+    required: true
+  version:
+    description: Version being released (no leading v)
+    required: true
+  dry_run:
+    description: If 'true', run cargo publish --dry-run instead of publishing
+    required: true
+  cargo_token:
+    description: Short-lived crates.io token from rust-lang/crates-io-auth-action
+    required: true
+  manifest_path:
+    description: Path to Cargo.toml; omit for crates in the main workspace
+    required: false
+    default: ""
+  extra_flags:
+    description: Extra flags to pass to cargo package and cargo publish (e.g. --target)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Skip if version already on crates.io
+      id: probe
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        # crates.io returns 200 for { name, version } that exists, 404 otherwise.
+        status=$(curl -sS -o /dev/null -w '%{http_code}' \
+          "https://crates.io/api/v1/crates/${CRATE}/${VERSION}")
+        if [ "$status" = "200" ]; then
+          echo "already_published=true" >>"$GITHUB_OUTPUT"
+          echo "::notice::${CRATE} ${VERSION} already on crates.io; will package + attest but skip publish."
+        else
+          echo "already_published=false" >>"$GITHUB_OUTPUT"
+        fi
+
+    - name: cargo package ${{ inputs.crate }}
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+        MANIFEST: ${{ inputs.manifest_path }}
+        EXTRA: ${{ inputs.extra_flags }}
+        # Force every crate's package output into the same directory so the
+        # release-upload step can glob them with one pattern.
+        CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      run: |
+        set -euo pipefail
+        if [ -n "$MANIFEST" ]; then
+          cargo package --manifest-path "$MANIFEST" $EXTRA
+        else
+          cargo package -p "$CRATE" $EXTRA
+        fi
+
+    - name: Attest build provenance for ${{ inputs.crate }}
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: ${{ github.workspace }}/target/package/${{ inputs.crate }}-${{ inputs.version }}.crate
+
+    - name: cargo publish ${{ inputs.crate }}
+      if: steps.probe.outputs.already_published == 'false'
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+        MANIFEST: ${{ inputs.manifest_path }}
+        EXTRA: ${{ inputs.extra_flags }}
+        DRY_RUN: ${{ inputs.dry_run }}
+        CARGO_REGISTRY_TOKEN: ${{ inputs.cargo_token }}
+        CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      run: |
+        set -euo pipefail
+        flags="$EXTRA"
+        if [ "$DRY_RUN" = "true" ]; then
+          flags="$flags --dry-run"
+        fi
+        if [ -n "$MANIFEST" ]; then
+          cargo publish --manifest-path "$MANIFEST" $flags
+        else
+          cargo publish -p "$CRATE" $flags
+        fi

@@ -1,0 +1,333 @@
+name: Release
+
+# Publishes the 8 main crates plus `forge-plugin-sdk` to crates.io with SLSA
+# build-provenance attestations, then opens a "prep next release" PR that bumps
+# workspace versions. See .github/RELEASE_CHECKLIST.md for the operator runbook.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      bump:
+        type: choice
+        description: Version bump for the prep-next-release PR
+        options: [patch, minor, major]
+        default: patch
+      dry_run:
+        type: boolean
+        description: Run cargo publish --dry-run; skip prep-next PR
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Publish order, top-down. Sequential because cargo publish (>=1.66) blocks
+  # until each new version is queryable on the index, so dependents resolve
+  # cleanly without manual sleeps.
+  PUBLISHABLE_CRATES: >-
+    forge-ir
+    forge-parser
+    forge-ir-bindgen
+    forge-host
+    forge-pipeline
+    forge-test-harness
+    forge-cli
+
+jobs:
+  # ----------------------------------------------------------------------
+  # Gate: tag must agree with workspace + SDK versions. Fast fail before we
+  # touch anything publishable.
+  # ----------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.versions.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target version
+        id: versions
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            version="${tag#v}"
+          else
+            # workflow_dispatch: trust the workspace version in Cargo.toml.
+            version=$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "Target version: $version"
+
+      - name: Tag matches Cargo.toml workspace version
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          ws_version=$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)
+          sdk_version=$(awk -F'"' '/^version *=/{print $2; exit}' \
+            crates/forge-plugin-sdk/Cargo.toml)
+          target="${{ steps.versions.outputs.version }}"
+          if [ "$ws_version" != "$target" ] || [ "$sdk_version" != "$target" ]; then
+            echo "::error::Tag $target disagrees with versions" \
+                 "(workspace=$ws_version, sdk=$sdk_version)"
+            exit 1
+          fi
+
+      - name: Skip pre-release / draft
+        if: github.event_name == 'release' &&
+            (github.event.release.prerelease || github.event.release.draft)
+        run: |
+          echo "::error::Pre-release / draft releases do not publish to crates.io." \
+               "Use workflow_dispatch with dry_run=true if you want to exercise the pipeline."
+          exit 1
+
+      - name: Confirm publishable set is unchanged
+        run: |
+          set -euo pipefail
+          actual=$(cargo metadata --format-version=1 --no-deps \
+            | jq -r '.packages[] | select(.publish != []) | .name' \
+            | sort -u | tr '\n' ' ')
+          expected="$(echo "$PUBLISHABLE_CRATES" | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Publishable crate set changed."
+            echo "Expected: $expected"
+            echo "Actual:   $actual"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------
+  # Publish each crate in dep order. Each step:
+  #   1. cargo package -p <crate>      (verifies the build)
+  #   2. attest-build-provenance       (SLSA attestation on the .crate file)
+  #   3. cargo publish -p <crate>      (idempotent: skip if version exists)
+  # ----------------------------------------------------------------------
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write       # Trusted Publishing OIDC + provenance attestations
+      attestations: write   # actions/attest-build-provenance
+      contents: write       # gh release upload
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Mints a short-lived crates.io token via OIDC. Each crate must have a
+      # Trusted Publisher entry on crates.io pointing at this workflow + env.
+      - name: Authenticate to crates.io (Trusted Publishing)
+        id: cargo_auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # ----- Main workspace crates (sequential, in dep order) -----
+      - name: Package, attest, and publish forge-ir
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-ir
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-parser
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-parser
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-ir-bindgen
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-ir-bindgen
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-host
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-host
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-pipeline
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-pipeline
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-test-harness
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-test-harness
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      - name: Package, attest, and publish forge-cli
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-cli
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+
+      # forge-plugin-sdk lives in its own workspace and targets wasm32-wasip2
+      # exclusively (a `compile_error!` in lib.rs enforces the target). Package
+      # / publish must pass --target so the verify build succeeds.
+      - name: Package, attest, and publish forge-plugin-sdk
+        uses: ./.github/actions/publish-crate
+        with:
+          crate: forge-plugin-sdk
+          version: ${{ env.VERSION }}
+          dry_run: ${{ env.DRY_RUN }}
+          cargo_token: ${{ steps.cargo_auth.outputs.token }}
+          manifest_path: crates/forge-plugin-sdk/Cargo.toml
+          extra_flags: --target wasm32-wasip2
+
+      # ----- Attach .crate files to the GitHub release for archival -----
+      - name: Upload .crate files to GitHub release
+        if: github.event_name == 'release' && env.DRY_RUN == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # The shared action stages every .crate under target/package/ so a
+          # single glob picks up the SDK alongside the main crates.
+          ls -la target/package/*.crate
+          gh release upload "$TAG" target/package/*.crate --clobber
+
+  # ----------------------------------------------------------------------
+  # After a successful publish, open a PR that bumps every crate's version,
+  # re-pins workspace deps, syncs the SDK's forge-ir pin, rolls over the
+  # CHANGELOG, and refreshes Cargo.lock.
+  # ----------------------------------------------------------------------
+  prep-next:
+    needs: [verify, publish]
+    if: github.event_name == 'release' && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      RELEASED_VERSION: ${{ needs.verify.outputs.version }}
+      BUMP: ${{ inputs.bump || 'patch' }}
+    steps:
+      # GITHUB_TOKEN does not trigger downstream workflow runs on PRs it
+      # opens, so the prep-next PR would sit with no CI. RELEASE_BOT_TOKEN
+      # (PAT or GitHub App installation token) is required to wake CI.
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit --locked --version ^0.13
+
+      # Bumps workspace.package.version AND every [workspace.dependencies]
+      # forge-* { version = ... } pin in the root Cargo.toml.
+      - name: Bump main workspace
+        run: cargo set-version --workspace --bump "$BUMP"
+
+      - name: Bump forge-plugin-sdk
+        run: |
+          cargo set-version --bump "$BUMP" \
+            --manifest-path crates/forge-plugin-sdk/Cargo.toml
+
+      # cargo-edit's coverage of `[workspace.dependencies]` and external
+      # workspaces varies by version. Belt-and-suspenders: re-pin every
+      # `forge-* { ..., version = "..." }` reference in both Cargo.toml files
+      # to whatever the workspace just landed on.
+      - name: Sync internal forge-* version pins
+        run: |
+          set -euo pipefail
+          new_version=$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)
+          python3 - "$new_version" <<'PY'
+          import re, sys, pathlib
+          new_version = sys.argv[1]
+          targets = [
+              pathlib.Path("Cargo.toml"),
+              pathlib.Path("crates/forge-plugin-sdk/Cargo.toml"),
+          ]
+          # Match: forge-<name> = { ... version = "<old>" ... }
+          pattern = re.compile(
+              r'(forge-[a-z0-9-]+\s*=\s*\{[^}\n]*version\s*=\s*")[^"]+(")'
+          )
+          total = 0
+          for path in targets:
+              text = path.read_text()
+              new_text, n = pattern.subn(rf'\g<1>{new_version}\g<2>', text)
+              if n:
+                  path.write_text(new_text)
+                  total += n
+          if total == 0:
+              sys.exit("No forge-* version pins found to update; manifest layout changed?")
+          PY
+
+      - name: Roll CHANGELOG [Unreleased] -> [<released>]
+        env:
+          RELEASE_DATE: ${{ github.event.release.published_at }}
+        run: |
+          set -euo pipefail
+          date_only="${RELEASE_DATE%%T*}"
+          if [ -z "$date_only" ]; then date_only=$(date -u +%Y-%m-%d); fi
+          python3 - "$RELEASED_VERSION" "$date_only" <<'PY'
+          import sys, pathlib
+          version, date = sys.argv[1], sys.argv[2]
+          path = pathlib.Path("CHANGELOG.md")
+          text = path.read_text()
+          marker = "## [Unreleased]"
+          if marker not in text:
+              sys.exit(f"CHANGELOG.md is missing {marker}; refusing to roll over")
+          replacement = f"## [Unreleased]\n\n## [{version}] - {date}"
+          path.write_text(text.replace(marker, replacement, 1))
+          PY
+
+      - name: Refresh Cargo.lock
+        run: cargo update --workspace
+
+      - name: Compute new version for branch / title
+        id: next
+        run: |
+          set -euo pipefail
+          new_version=$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)
+          echo "version=$new_version" >>"$GITHUB_OUTPUT"
+
+      - name: Open prep-next-release PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.RELEASE_BOT_TOKEN }}
+          branch: chore/prep-next-release-v${{ steps.next.outputs.version }}
+          base: main
+          title: "chore: prep next release v${{ steps.next.outputs.version }}"
+          commit-message: "chore: bump workspace to ${{ steps.next.outputs.version }}"
+          labels: release-prep
+          body: |
+            Automated follow-up to the v${{ env.RELEASED_VERSION }} release.
+
+            - Bumped workspace + `forge-plugin-sdk` versions to **${{ steps.next.outputs.version }}** (`${{ env.BUMP }}` bump).
+            - Re-pinned `[workspace.dependencies] forge-*` versions and the SDK's `forge-ir` pin.
+            - Rolled over `CHANGELOG.md` `[Unreleased]` to `[${{ env.RELEASED_VERSION }}]`.
+            - Refreshed `Cargo.lock`.
+
+            Merge once CI is green to start landing changes for the next release.
