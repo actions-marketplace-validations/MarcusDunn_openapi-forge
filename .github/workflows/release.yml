@@ -315,10 +315,17 @@ jobs:
       # SLSA build provenance for parity with the crates publish flow. With
       # `push-to-registry: true`, this writes a referrer manifest alongside
       # the artifact so `gh attestation verify oci://$IMAGE:$VERSION` works.
+      #
+      # Use `subject-digest`, not `subject-path`: the subject is the OCI
+      # *manifest*, whose digest is the one returned by `oras manifest
+      # fetch --descriptor` (captured by the push step). `subject-path`
+      # would hash the local wasm file — that's the layer-blob digest, not
+      # the manifest digest, and the action's referrer write would 404 at
+      # the registry.
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-path: plugins/target/wasm32-wasip2/release/${{ matrix.wasm }}
           subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
   # ----------------------------------------------------------------------
