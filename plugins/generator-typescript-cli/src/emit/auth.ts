@@ -431,6 +431,7 @@ function schemeInfo(s: SecurityScheme): {
       return { id: s.id, kind: 'bearer' };
     case 'http-basic':
       return { id: s.id, kind: 'basic' };
+    case 'mutual-tls':
     case 'oauth2':
     case 'open-id-connect':
       // Filtered out before reaching here.

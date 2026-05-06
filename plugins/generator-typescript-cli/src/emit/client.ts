@@ -144,7 +144,7 @@ function typeRefToTs(ctx: Ctx, ref: string): string {
   const named = ctx.byId.get(ref);
   if (!named) return 'unknown';
   if (named.definition.tag === 'primitive') {
-    return primitiveTs(named.definition.val.kind);
+    return primitiveTs(named.definition.val);
   }
   if (named.definition.tag === 'null') {
     return 'null';

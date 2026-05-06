@@ -258,6 +258,7 @@ fn parse_oauth2(
 ///   - `password`: `tokenUrl` required.
 ///   - `clientCredentials`: `tokenUrl` required.
 ///   - `authorizationCode`: `authorizationUrl` + `tokenUrl` required.
+///
 /// Missing required URLs emit `parser/E-OAUTH2-MISSING-URL`.
 fn parse_oauth2_flow(
     ctx: &mut Ctx,

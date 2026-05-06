@@ -13,6 +13,18 @@ use crate::diag;
 use crate::pointer::Ptr;
 use crate::schema::{parse_schema, NameHint};
 
+/// Parameters bucketed by location. The `querystring` bucket is OAS 3.2
+/// `in: querystring` — a parameter that maps to the entire querystring
+/// (opaque pass-through), distinct from individual `in: query` params.
+#[derive(Default)]
+struct ParamBuckets {
+    path: Vec<Parameter>,
+    query: Vec<Parameter>,
+    header: Vec<Parameter>,
+    cookie: Vec<Parameter>,
+    querystring: Vec<Parameter>,
+}
+
 const METHODS: &[(&str, HttpMethod)] = &[
     ("get", HttpMethod::Get),
     ("put", HttpMethod::Put),
@@ -216,13 +228,7 @@ fn parse_operation(
     method: HttpMethod,
     value: &J,
     ptr: &mut Ptr,
-    path_item_params: &(
-        Vec<Parameter>,
-        Vec<Parameter>,
-        Vec<Parameter>,
-        Vec<Parameter>,
-        Vec<Parameter>,
-    ),
+    path_item_params: &ParamBuckets,
     path_item_summary: Option<&str>,
     path_item_description: Option<&str>,
     path_item_servers: &[forge_ir::Server],
@@ -253,20 +259,15 @@ fn parse_operation(
         }
     };
 
-    let (
-        op_path_params,
-        op_query_params,
-        op_header_params,
-        op_cookie_params,
-        op_querystring_params,
-    ) = parse_parameters(ctx, &op_id, map, ptr);
+    let op_params = parse_parameters(ctx, &op_id, map, ptr);
     // Shared path-item parameters merge in *first*; operation-level
     // entries override by `(name, in)` per OAS §4.8.9.
-    let path_params = merge_path_item_params(&path_item_params.0, op_path_params);
-    let query_params = merge_path_item_params(&path_item_params.1, op_query_params);
-    let header_params = merge_path_item_params(&path_item_params.2, op_header_params);
-    let cookie_params = merge_path_item_params(&path_item_params.3, op_cookie_params);
-    let querystring_params = merge_path_item_params(&path_item_params.4, op_querystring_params);
+    let path_params = merge_path_item_params(&path_item_params.path, op_params.path);
+    let query_params = merge_path_item_params(&path_item_params.query, op_params.query);
+    let header_params = merge_path_item_params(&path_item_params.header, op_params.header);
+    let cookie_params = merge_path_item_params(&path_item_params.cookie, op_params.cookie);
+    let querystring_params =
+        merge_path_item_params(&path_item_params.querystring, op_params.querystring);
 
     let request_body = map.get("requestBody").and_then(|rb| {
         ptr.with_token("requestBody", |ptr| {
@@ -367,64 +368,35 @@ fn merge_path_item_params(shared: &[Parameter], op: Vec<Parameter>) -> Vec<Param
 
 /// Parse the `parameters` array, splitting by `in:` location. Reads
 /// `style` / `explode` per the OAS default table when not declared.
-///
-/// Returns `(path, query, header, cookie, querystring)`. The fifth
-/// bucket is OAS 3.2 `in: querystring` — a parameter that maps to the
-/// entire querystring (opaque pass-through).
 fn parse_parameters(
     ctx: &mut Ctx,
     op_id: &str,
     op_map: &serde_json::Map<String, J>,
     ptr: &mut Ptr,
-) -> (
-    Vec<Parameter>,
-    Vec<Parameter>,
-    Vec<Parameter>,
-    Vec<Parameter>,
-    Vec<Parameter>,
-) {
-    let mut path_p = Vec::new();
-    let mut query_p = Vec::new();
-    let mut header_p = Vec::new();
-    let mut cookie_p = Vec::new();
-    let mut querystring_p = Vec::new();
+) -> ParamBuckets {
+    let mut buckets = ParamBuckets::default();
     let Some(J::Array(items)) = op_map.get("parameters") else {
-        return (path_p, query_p, header_p, cookie_p, querystring_p);
+        return buckets;
     };
     ptr.with_token("parameters", |ptr| {
         for (i, raw) in items.iter().enumerate() {
             ptr.with_index(i, |ptr| {
                 crate::ref_walk::with_resolved_object(ctx, raw, ptr, |ctx, resolved, ptr| {
-                    parse_inline_parameter(
-                        ctx,
-                        op_id,
-                        resolved,
-                        ptr,
-                        &mut path_p,
-                        &mut query_p,
-                        &mut header_p,
-                        &mut cookie_p,
-                        &mut querystring_p,
-                    );
+                    parse_inline_parameter(ctx, op_id, resolved, ptr, &mut buckets);
                     Some(())
                 });
             });
         }
     });
-    (path_p, query_p, header_p, cookie_p, querystring_p)
+    buckets
 }
 
-#[allow(clippy::too_many_arguments)]
 fn parse_inline_parameter(
     ctx: &mut Ctx,
     op_id: &str,
     raw: &J,
     ptr: &mut Ptr,
-    path_p: &mut Vec<Parameter>,
-    query_p: &mut Vec<Parameter>,
-    header_p: &mut Vec<Parameter>,
-    cookie_p: &mut Vec<Parameter>,
-    querystring_p: &mut Vec<Parameter>,
+    buckets: &mut ParamBuckets,
 ) {
     let Some(param_map) = raw.as_object() else {
         ctx.push_diag(diag::err(
@@ -454,11 +426,11 @@ fn parse_inline_parameter(
         return;
     };
     match loc {
-        "path" => path_p.push(p),
-        "query" => query_p.push(p),
-        "header" => header_p.push(p),
-        "cookie" => cookie_p.push(p),
-        "querystring" => querystring_p.push(p),
+        "path" => buckets.path.push(p),
+        "query" => buckets.query.push(p),
+        "header" => buckets.header.push(p),
+        "cookie" => buckets.cookie.push(p),
+        "querystring" => buckets.querystring.push(p),
         other => ctx.push_diag(diag::err(
             diag::E_INVALID_TYPE,
             format!("unknown parameter location `{other}`"),

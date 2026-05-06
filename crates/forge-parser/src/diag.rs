@@ -69,10 +69,6 @@ pub const W_RECURSIVE_TYPE: &str = "parser/W-RECURSIVE-TYPE";
 /// `null`, which is reserved for the [`forge_ir::TypeDef::Null`] singleton).
 /// The user's schema is renamed by appending a numeric suffix.
 pub const W_RESERVED_NAME: &str = "parser/W-RESERVED-NAME";
-// 3.2 features that don't fit the IR yet — surfaced as warnings so the
-// rest of the spec parses successfully.
-pub const W_TAG_METADATA_DROPPED: &str = "parser/W-TAG-METADATA-DROPPED";
-pub const W_ADDITIONAL_OPERATIONS_DROPPED: &str = "parser/W-ADDITIONAL-OPERATIONS-DROPPED";
 /// A tag's `parent` field references a name not declared in the
 /// top-level `tags` array. The parser drops the parent ref (the tag
 /// itself stays) so generators that render tag trees never see broken

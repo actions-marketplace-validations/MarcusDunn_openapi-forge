@@ -254,11 +254,10 @@ function paramTypeInfo(ctx: Ctx, p: Parameter): ParamTypeInfo {
     }
     case 'array': {
       const inner = ctx.byId.get(def.val.items);
-      const innerTs = inner && inner.definition.tag === 'primitive' ? primitiveTs(inner.definition.val.kind) : 'value';
+      const innerTs = inner && inner.definition.tag === 'primitive' ? primitiveTs(inner.definition.val) : 'value';
       return { label: innerTs, parser: 'parseCsv', array: true };
     }
     case 'object':
-    case 'map':
     case 'union':
       return { label: 'json', parser: undefined, array: false };
     case 'null':
@@ -272,14 +271,14 @@ function convertCmdOptValue(ctx: Ctx, p: Parameter, valueExpr: string): string {
   const named = ctx.byId.get(p.type);
   if (!named) return valueExpr;
   const def = named.definition;
-  if (def.tag === 'object' || def.tag === 'map' || def.tag === 'union') {
+  if (def.tag === 'object' || def.tag === 'union') {
     return `JSON.parse(${valueExpr} as string)`;
   }
   if (def.tag === 'array') {
     // commander parseCsv collected strings; coerce numeric items if needed.
     const inner = ctx.byId.get(def.val.items);
     if (inner && inner.definition.tag === 'primitive') {
-      const tsKind = primitiveTs(inner.definition.val.kind);
+      const tsKind = primitiveTs(inner.definition.val);
       if (tsKind === 'number') return `(${valueExpr} as string[]).map(parseInteger)`;
       if (tsKind === 'boolean') return `(${valueExpr} as string[]).map(parseBool)`;
     }

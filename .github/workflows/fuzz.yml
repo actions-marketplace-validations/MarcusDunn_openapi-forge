@@ -26,7 +26,12 @@ jobs:
         target: [parse_str_bytes, parse_str_structured, transformer_output_ir]
     steps:
       - uses: actions/checkout@v4
+      # cargo-fuzz ≥ 0.13 builds against `x86_64-unknown-linux-musl` so
+      # libFuzzer's sanitizer runtime can dynamic-link cleanly; the target
+      # must be installed alongside nightly for that build to succeed.
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz

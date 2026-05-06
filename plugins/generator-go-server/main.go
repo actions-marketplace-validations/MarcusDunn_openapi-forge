@@ -167,22 +167,25 @@ func convertPathParams(in []types.Parameter, kinds map[string]string) []emit.Par
 }
 
 func methodToString(m types.HTTPMethod) string {
-	switch m {
-	case types.HTTPMethodGet:
+	// HTTPMethod is rendered by wit-bindgen-go as a payloaded variant
+	// (`other(string)` for OAS 3.2), so case constants don't exist —
+	// dispatch via the generated predicate methods instead.
+	switch {
+	case m.Get():
 		return "GET"
-	case types.HTTPMethodPut:
+	case m.Put():
 		return "PUT"
-	case types.HTTPMethodPost:
+	case m.Post():
 		return "POST"
-	case types.HTTPMethodDelete:
+	case m.Delete():
 		return "DELETE"
-	case types.HTTPMethodOptions:
+	case m.Options():
 		return "OPTIONS"
-	case types.HTTPMethodHead:
+	case m.Head():
 		return "HEAD"
-	case types.HTTPMethodPatch:
+	case m.Patch():
 		return "PATCH"
-	case types.HTTPMethodTrace:
+	case m.Trace():
 		return "TRACE"
 	default:
 		return "GET"

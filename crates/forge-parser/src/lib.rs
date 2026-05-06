@@ -2774,15 +2774,11 @@ mod tests {
             .map(|d| d.code.as_str())
             .collect();
         assert!(
-            warns
-                .iter()
-                .any(|c| *c == diag::W_DEPENDENT_REQUIRED_DROPPED),
+            warns.contains(&diag::W_DEPENDENT_REQUIRED_DROPPED),
             "expected W-DEPENDENT-REQUIRED-DROPPED, got {warns:?}"
         );
         assert!(
-            warns
-                .iter()
-                .any(|c| *c == diag::W_UNEVALUATED_PROPERTIES_DROPPED),
+            warns.contains(&diag::W_UNEVALUATED_PROPERTIES_DROPPED),
             "expected W-UNEVALUATED-PROPERTIES-DROPPED, got {warns:?}"
         );
         // No errors — these used to reject the spec entirely.

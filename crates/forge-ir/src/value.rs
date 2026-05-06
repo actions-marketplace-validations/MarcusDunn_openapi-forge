@@ -18,7 +18,7 @@
 //!
 //! The pool is structurally deduplicated by the parser: pushing a `Value`
 //! that is already present at index `i` returns `i`. SDK helpers
-//! ([`resolve`], [`to_json`]) walk the pool to materialise tree-shaped
+//! (`resolve`, `to_json`) walk the pool to materialise tree-shaped
 //! representations on demand.
 //!
 //! See ADR-0006 for the parallel type-pool design.

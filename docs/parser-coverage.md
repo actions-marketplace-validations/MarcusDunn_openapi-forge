@@ -302,8 +302,6 @@ Warnings:
 | Unknown security scheme type / http scheme | `parser/W-UNKNOWN-SECURITY-SCHEME`          |
 | Unrecognized parameter `style`          | `parser/W-PARAM-STYLE-UNSUPPORTED`             |
 | Recursive type group emitted (info)     | `parser/W-RECURSIVE-TYPE`                      |
-| 3.2 tag `parent` / `kind` metadata      | `parser/W-TAG-METADATA-DROPPED`                |
-| 3.2 `additionalOperations`              | `parser/W-ADDITIONAL-OPERATIONS-DROPPED`       |
 | 3.1+ `dependentRequired` (dropped)      | `parser/W-DEPENDENT-REQUIRED-DROPPED`          |
 | 3.1+ `dependentSchemas` (dropped)       | `parser/W-DEPENDENT-SCHEMAS-DROPPED`           |
 | 3.1+ `unevaluatedProperties` (dropped)  | `parser/W-UNEVALUATED-PROPERTIES-DROPPED`      |

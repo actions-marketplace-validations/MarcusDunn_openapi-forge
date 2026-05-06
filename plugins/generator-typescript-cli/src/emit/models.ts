@@ -13,7 +13,6 @@ import type {
   EnumIntType,
   UnionType,
   ArrayType,
-  MapType,
 } from '../types.js';
 import { pascalCase, camelCase } from '../naming.js';
 
@@ -44,9 +43,6 @@ function renderNamedType(ctx: Ctx, t: NamedType): string {
     case 'array': {
       return renderArrayAlias(ctx, name, doc, t.definition.val);
     }
-    case 'map': {
-      return renderMapAlias(ctx, name, doc, t.definition.val);
-    }
     case 'enum-string': {
       return renderEnumString(name, doc, t.definition.val);
     }
@@ -74,11 +70,6 @@ function renderArrayAlias(ctx: Ctx, name: string, doc: string, a: ArrayType): st
   return `${doc}export type ${name} = ${item}[];\n`;
 }
 
-function renderMapAlias(ctx: Ctx, name: string, doc: string, m: MapType): string {
-  const v = typeRefToTs(ctx, m.values);
-  return `${doc}export type ${name} = Record<string, ${v}>;\n`;
-}
-
 function renderEnumString(name: string, doc: string, e: EnumStringType): string {
   const cases = e.values.map((v) => JSON.stringify(v.value)).join(' | ');
   const inner = cases || 'never';
@@ -92,7 +83,6 @@ function renderEnumInt(name: string, doc: string, e: EnumIntType): string {
 }
 
 function renderInterface(ctx: Ctx, name: string, doc: string, o: ObjectType): string {
-  const requiredSet = new Set(o.required);
   let body = '';
   for (const p of o.properties) {
     // Use the spec's original property name verbatim — preserves wire
@@ -102,8 +92,7 @@ function renderInterface(ctx: Ctx, name: string, doc: string, o: ObjectType): st
     // `obj["+1"]`.
     const key = jsObjectKey(p.name);
     const t = typeRefToTs(ctx, p.type);
-    const required = requiredSet.has(p.name);
-    const ann = required ? '' : '?';
+    const ann = p.required ? '' : '?';
     const docLine = jsDoc(propertyDoc(p));
     body += `  ${docLine}${key}${ann}: ${t};\n`;
   }

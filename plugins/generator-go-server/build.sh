@@ -48,11 +48,26 @@ GOMODCACHE="$GOPATH/pkg/mod"
 export GOPATH GOMODCACHE
 export PATH="$GOPATH/bin:$PATH"
 
-# Locate TinyGo's bundled wasi-cli WIT.
+# Locate TinyGo's bundled wasi-cli WIT. Layout differs between distros:
+#   - source / Nix:        <prefix>/share/tinygo/lib/wasi-cli/wit
+#   - .deb (0.40+) install: /usr/local/lib/tinygo/lib/wasi-cli/wit
+# Probe candidates rather than guess so the script works on every shape.
 TINYGO_BIN="$(command -v tinygo)"
-TINYGO_WIT_LIB="$(dirname "$(dirname "$TINYGO_BIN")")/share/tinygo/lib/wasi-cli/wit"
-if [ ! -d "$TINYGO_WIT_LIB" ]; then
-    echo "build.sh: cannot find TinyGo's wasi-cli WIT at $TINYGO_WIT_LIB" >&2
+TINYGO_BIN_REAL="$(readlink -f "$TINYGO_BIN" 2>/dev/null || echo "$TINYGO_BIN")"
+TINYGO_PREFIX="$(dirname "$(dirname "$TINYGO_BIN_REAL")")"
+TINYGO_WIT_LIB=""
+for candidate in \
+    "$TINYGO_PREFIX/share/tinygo/lib/wasi-cli/wit" \
+    "$TINYGO_PREFIX/lib/tinygo/lib/wasi-cli/wit" \
+    "/usr/local/lib/tinygo/lib/wasi-cli/wit" \
+    "/usr/lib/tinygo/lib/wasi-cli/wit"; do
+    if [ -d "$candidate" ]; then
+        TINYGO_WIT_LIB="$candidate"
+        break
+    fi
+done
+if [ -z "$TINYGO_WIT_LIB" ]; then
+    echo "build.sh: cannot locate TinyGo's wasi-cli WIT (tried under $TINYGO_PREFIX and standard system paths)" >&2
     exit 1
 fi
 
