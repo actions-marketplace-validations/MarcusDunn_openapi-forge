@@ -246,8 +246,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Prebuilt binary, ~10s. Avoids `cargo install` having to compile
+      # cargo-edit, which would fail because cargo-edit's deps require
+      # rust >=1.88 and rust-toolchain.toml pins this repo to 1.87.
       - name: Install cargo-edit
-        run: cargo install cargo-edit --locked --version ^0.13
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
 
       # Bumps workspace.package.version AND every [workspace.dependencies]
       # forge-* { version = ... } pin in the root Cargo.toml.

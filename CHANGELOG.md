@@ -8,6 +8,8 @@ Pre-1.0, the IR is unstable. Every release that touches the IR carries an
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-06
+
 ### Changed — `PrimitiveKind` is now JSON Schema `type` values only (#105) [BREAKING]
 
 `PrimitiveKind` shrank from 13 variants to 4, matching the JSON Schema `type` keyword exactly: `String`, `Integer`, `Number`, `Bool`. Every OAS `format` refinement (`int32`, `int64`, `float`, `double`, `date`, `date-time`, `uuid`, `byte`, `binary`, `email`, `password`, `decimal`, `iban`, …) now lands verbatim on `PrimitiveConstraints.format_extension`. Plugins decide whether to produce a richer target-language type based on the format string.
