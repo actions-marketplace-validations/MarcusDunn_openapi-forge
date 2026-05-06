@@ -220,6 +220,100 @@ jobs:
           gh release upload "$TAG" target/package/*.crate --clobber
 
   # ----------------------------------------------------------------------
+  # Publish the two minimal test-fixture plugins to GHCR so the CLI's OCI
+  # pull path has a stable, public artifact to exercise. Best-effort —
+  # `continue-on-error: true` and no incoming `needs` edge from prep-next
+  # mean a plugin push failure does not block the version-bump PR.
+  #
+  # First-release-only manual step: each new GHCR package is created
+  # private. Flip both to public via the GitHub UI before the CLI's
+  # anonymous OCI client (oci.rs:169) can pull them. See
+  # .github/RELEASE_CHECKLIST.md.
+  # ----------------------------------------------------------------------
+  publish-plugins-oci:
+    needs: [verify, publish]
+    if: >-
+      github.event_name == 'release'
+      && !github.event.release.prerelease
+      && !github.event.release.draft
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: write       # oras push to ghcr.io via GITHUB_TOKEN
+      id-token: write       # SLSA build provenance attestation
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - plugin: transformer-noop
+            wasm: transformer_noop.wasm
+            desc: "No-op transformer plugin for openapi-forge (test fixture)."
+          - plugin: generator-debug-dump
+            wasm: generator_debug_dump.wasm
+            desc: "Debug-dump generator: emits the IR as ir.txt (test fixture)."
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.plugin }}
+      MEDIA_TYPE: application/vnd.bytecodealliance.wasm.component.layer.v0+wasm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build ${{ matrix.plugin }}
+        run: |
+          cargo build --release --target wasm32-wasip2 \
+            --manifest-path plugins/${{ matrix.plugin }}/Cargo.toml
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" \
+            | oras login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push versioned tag
+        id: push
+        run: |
+          set -euo pipefail
+          WASM=plugins/target/wasm32-wasip2/release/${{ matrix.wasm }}
+          oras push "$IMAGE:$VERSION" \
+            --artifact-type application/vnd.bytecodealliance.wasm.component.v0 \
+            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "org.opencontainers.image.version=$VERSION" \
+            --annotation "org.opencontainers.image.revision=${{ github.sha }}" \
+            --annotation "org.opencontainers.image.licenses=MIT OR Apache-2.0" \
+            --annotation "org.opencontainers.image.description=${{ matrix.desc }}" \
+            "$WASM:$MEDIA_TYPE"
+          DIGEST=$(oras manifest fetch --descriptor "$IMAGE:$VERSION" | jq -r .digest)
+          echo "digest=$DIGEST" >>"$GITHUB_OUTPUT"
+          {
+            echo "## ${{ matrix.plugin }} OCI artifact"
+            echo "- \`$IMAGE:$VERSION\`"
+            echo "- \`$IMAGE@$DIGEST\` (pin this for reproducibility)"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Tag :latest
+        run: oras tag "$IMAGE:$VERSION" latest
+
+      # SLSA build provenance for parity with the crates publish flow. With
+      # `push-to-registry: true`, this writes a referrer manifest alongside
+      # the artifact so `gh attestation verify oci://$IMAGE:$VERSION` works.
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: plugins/target/wasm32-wasip2/release/${{ matrix.wasm }}
+          subject-name: ${{ env.IMAGE }}
+          push-to-registry: true
+
+  # ----------------------------------------------------------------------
   # After a successful publish, open a PR that bumps every crate's version,
   # re-pins workspace deps, syncs the SDK's forge-ir pin, rolls over the
   # CHANGELOG, and refreshes Cargo.lock.
