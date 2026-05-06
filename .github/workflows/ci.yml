@@ -84,12 +84,19 @@ jobs:
     # cargo-fuzz ≥ 0.13 builds against `x86_64-unknown-linux-musl` so
     # libFuzzer's sanitizer runtime can dynamic-link cleanly. The musl
     # target defaults to `crt-static`, which AddressSanitizer rejects —
-    # override via RUSTFLAGS at the job level (workflow-level RUSTFLAGS
-    # is just `-D warnings`, which musl-with-asan can't tolerate alone).
+    # override RUSTFLAGS to disable it. The C compiler for that target
+    # is `musl-gcc` (from the `musl-tools` apt package); cc-rs looks up
+    # `x86_64-linux-musl-gcc` by default, so point it at `musl-gcc`
+    # explicitly via the per-target CC env var.
     env:
       RUSTFLAGS: -C target-feature=-crt-static -D warnings
+      CC_x86_64_unknown_linux_musl: musl-gcc
     steps:
       - uses: actions/checkout@v4
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: x86_64-unknown-linux-musl
