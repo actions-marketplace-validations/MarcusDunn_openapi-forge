@@ -487,7 +487,7 @@ mod tests {
             .await;
         // Manifest by digest (the client may re-fetch by digest).
         Mock::given(method("GET"))
-            .and(path(format!("/v2/test/repo/manifests/{}", manifest_digest)))
+            .and(path(format!("/v2/test/repo/manifests/{manifest_digest}")))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("Content-Type", "application/vnd.oci.image.manifest.v1+json")
@@ -497,7 +497,7 @@ mod tests {
             .await;
         // Config blob.
         Mock::given(method("GET"))
-            .and(path(format!("/v2/test/repo/blobs/{}", config_digest)))
+            .and(path(format!("/v2/test/repo/blobs/{config_digest}")))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_raw(config_blob, "application/vnd.oci.image.config.v1+json"),
@@ -506,7 +506,7 @@ mod tests {
             .await;
         // Layer blob.
         Mock::given(method("GET"))
-            .and(path(format!("/v2/test/repo/blobs/{}", layer_dig)))
+            .and(path(format!("/v2/test/repo/blobs/{layer_dig}")))
             .respond_with(
                 ResponseTemplate::new(200).set_body_raw(payload.clone(), "application/wasm"),
             )

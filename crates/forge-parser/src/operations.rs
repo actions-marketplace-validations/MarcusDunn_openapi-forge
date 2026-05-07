@@ -482,7 +482,7 @@ fn build_parameter(
             }
         },
     };
-    let role = format!("param_{}_{name}", loc);
+    let role = format!("param_{loc}_{name}");
     let role_san = crate::sanitize::ident(&role);
     let type_ref = ptr.with_token("schema", |ptr| {
         parse_schema(ctx, schema, ptr, NameHint::inline(owner_id, &role_san))

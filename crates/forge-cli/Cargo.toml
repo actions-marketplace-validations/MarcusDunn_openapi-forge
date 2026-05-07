@@ -42,5 +42,5 @@ hex = "0.4"
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
 tempfile = { workspace = true }
-wiremock = "=0.6.4"
+wiremock = "=0.6.5"
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread"] }

@@ -170,9 +170,8 @@ fn merge_part(
             ctx.push_diag(diag::err(
                 diag::E_COMPOSITION_ALLOF,
                 format!(
-                    "allOf part {index} resolves to a non-object type (`{}`); only object \
-                     composition is supported",
-                    part_ref
+                    "allOf part {index} resolves to a non-object type (`{part_ref}`); only \
+                     object composition is supported"
                 ),
                 ptr.loc(ctx.file),
             ));
