@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use thiserror::Error;
-use wasmtime::component::{Component, Linker, ResourceTable};
+use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
 use wasmtime::{AsContextMut, Engine as WtEngine, Store, StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use forge_ir::{Diagnostic, Ir, PluginInfo};
 use forge_ir_bindgen::bindings;
@@ -243,11 +243,11 @@ impl HostState {
 }
 
 impl WasiView for HostState {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.wasi
-    }
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.resource_table
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi,
+            table: &mut self.resource_table,
+        }
     }
 }
 
@@ -668,9 +668,12 @@ fn build_transformer_linker(
     _component: &Component,
 ) -> Result<Linker<HostState>, String> {
     let mut linker = Linker::<HostState>::new(engine.raw());
-    bindings::transformer::IrTransformer::add_to_linker(&mut linker, |s: &mut HostState| s)
-        .map_err(|e| e.to_string())?;
-    wasmtime_wasi::add_to_linker_sync(&mut linker).map_err(|e| e.to_string())?;
+    bindings::transformer::IrTransformer::add_to_linker::<HostState, HasSelf<HostState>>(
+        &mut linker,
+        |s| s,
+    )
+    .map_err(|e| e.to_string())?;
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(|e| e.to_string())?;
     Ok(linker)
 }
 
@@ -679,9 +682,12 @@ fn build_generator_linker(
     _component: &Component,
 ) -> Result<Linker<HostState>, String> {
     let mut linker = Linker::<HostState>::new(engine.raw());
-    bindings::generator::CodeGenerator::add_to_linker(&mut linker, |s: &mut HostState| s)
-        .map_err(|e| e.to_string())?;
-    wasmtime_wasi::add_to_linker_sync(&mut linker).map_err(|e| e.to_string())?;
+    bindings::generator::CodeGenerator::add_to_linker::<HostState, HasSelf<HostState>>(
+        &mut linker,
+        |s| s,
+    )
+    .map_err(|e| e.to_string())?;
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(|e| e.to_string())?;
     Ok(linker)
 }
 
