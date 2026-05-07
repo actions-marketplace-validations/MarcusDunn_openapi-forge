@@ -63,7 +63,7 @@ clap = { version = "4.5", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # Spec navigation
-jsonptr = "0.6"
+jsonptr = "0.7"
 
 # JSON Schema validation (used by forge-cli to validate plugin config blocks
 # against each plugin's `config_schema()` before invoking the stage).
