@@ -526,12 +526,18 @@ fn generated_petstore_crate_cargo_checks() {
         }
         std::fs::write(&target, &f.content).unwrap();
     }
-    let status = std::process::Command::new("cargo")
-        .arg("check")
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("check")
         .arg("--manifest-path")
-        .arg(dir.path().join("Cargo.toml"))
-        .status()
-        .expect("spawn cargo");
+        .arg(dir.path().join("Cargo.toml"));
+    // CI-only: redirect target/ to a stable, cacheable path so reqwest +
+    // tokio + serde build incrementally across runs instead of from scratch
+    // inside the throwaway tempdir. `.github/workflows/ci.yml` sets the env
+    // and caches the path; locally it stays unset and behaviour is unchanged.
+    if let Some(td) = std::env::var_os("FORGE_ITEST_CARGO_TARGET_DIR") {
+        cmd.arg("--target-dir").arg(td);
+    }
+    let status = cmd.status().expect("spawn cargo");
     assert!(
         status.success(),
         "generated crate failed `cargo check` (status {status:?})"

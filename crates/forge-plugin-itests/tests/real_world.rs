@@ -62,12 +62,15 @@ fn cargo_check(dir: &Path) {
         eprintln!("skipping cargo_check: `cargo` not on PATH");
         return;
     }
-    let status = std::process::Command::new("cargo")
-        .arg("check")
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("check")
         .arg("--manifest-path")
-        .arg(dir.join("Cargo.toml"))
-        .status()
-        .expect("spawn cargo");
+        .arg(dir.join("Cargo.toml"));
+    // See `generator_rust_reqwest.rs` — CI-only target-dir redirect.
+    if let Some(td) = std::env::var_os("FORGE_ITEST_CARGO_TARGET_DIR") {
+        cmd.arg("--target-dir").arg(td);
+    }
+    let status = cmd.status().expect("spawn cargo");
     assert!(status.success(), "cargo check failed (status {status:?})");
 }
 

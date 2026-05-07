@@ -194,7 +194,8 @@ fn generated_petstore_compiles_and_help_works() {
     write_files(&out, dir.path());
 
     npm_install(dir.path());
-    tsc_check(dir.path());
+    // `tsc` (no flags) already type-checks before emitting; calling
+    // `tsc --noEmit` first is redundant and roughly doubles the tsc cost.
     tsc_build(dir.path());
 
     let help = cli_help(dir.path(), "petstore");
@@ -239,7 +240,8 @@ fn generated_github_issues_compiles_with_enum_choices() {
     let dir = tempfile::tempdir().expect("tempdir");
     write_files(&out, dir.path());
     npm_install(dir.path());
-    tsc_check(dir.path());
+    // `tsc` already type-checks before emitting; the prior `tsc_check`
+    // was redundant.
     tsc_build(dir.path());
 
     let help = cli_help(dir.path(), "gh-issues");
@@ -387,9 +389,10 @@ fn generated_multi_tenant_shape_compiles() {
     let dir = tempfile::tempdir().expect("tempdir");
     write_files(&out, dir.path());
     npm_install(dir.path());
-    // tsc must accept the output. A regression in any of the three bug
-    // classes above surfaces here as a typed-error / undefined-name fail.
-    tsc_check(dir.path());
+    // `tsc` (build) must accept the output. A regression in any of the
+    // three bug classes above surfaces here as a typed-error /
+    // undefined-name fail. `tsc` type-checks before emitting, so a
+    // separate `tsc --noEmit` would be redundant.
     tsc_build(dir.path());
 
     let help = cli_help(dir.path(), "multi-tenant-shape");
@@ -456,8 +459,9 @@ fn generated_multi_tenant_shape_with_oauth_emits_login() {
     write_files(&out, dir.path());
 
     // The generated cli.ts and auth.ts must compile under strict tsc.
+    // `tsc` (build) type-checks before emitting; the prior `tsc_check`
+    // was redundant.
     npm_install(dir.path());
-    tsc_check(dir.path());
     tsc_build(dir.path());
 
     // Generated files contain the login surface.

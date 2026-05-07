@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel superseded runs on PR branches; never on `main`. Pure runner-cost
+# saving — wall time on a single PR is unaffected.
+#
+# Safe under branch protection: required-check evaluation happens on the
+# latest commit SHA. A cancelled run lives on the previous SHA and doesn't
+# affect the merge candidate.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -43,10 +53,25 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      # The reqwest acceptance test (`generated_petstore_crate_cargo_checks`)
+      # writes a generated crate to a tempdir and runs `cargo check` on it.
+      # By default that creates a fresh `target/` inside the tempdir, so
+      # reqwest+tokio+serde compile from scratch every run. Redirect via this
+      # env so the test code can pass `--target-dir` to a cacheable path.
+      # Set in a step (not job-level env) because the `runner` context is
+      # only available inside steps.
+      - name: Set itest target dir
+        run: echo "FORGE_ITEST_CARGO_TARGET_DIR=$HOME/.cache/forge-itest-target" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      - name: Cache itest cargo-check target dir
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/forge-itest-target
+          key: forge-itest-target-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: forge-itest-target-${{ runner.os }}-
       - uses: taiki-e/install-action@nextest
       # No `#[test]` / `#[cfg(test)]` may live inside a plugin crate — see
       # ADR-0004. Catch any reintroduction before doing the slow build.
@@ -117,10 +142,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # See note in the `test` job — same `cargo check` per-tempdir pattern,
+      # same redirect to a cached path so reqwest+tokio+serde build once.
+      - name: Set itest target dir
+        run: echo "FORGE_ITEST_CARGO_TARGET_DIR=$HOME/.cache/forge-itest-target" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      - name: Cache itest cargo-check target dir
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/forge-itest-target
+          key: forge-itest-target-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: forge-itest-target-${{ runner.os }}-
       - uses: taiki-e/install-action@nextest
       - uses: actions/setup-node@v4
         with:
@@ -149,7 +184,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+      - name: Cache TinyGo install
+        id: tinygo-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/tinygo
+            /usr/local/bin/tinygo
+          key: tinygo-0.40.1-${{ runner.os }}
       - name: Install TinyGo
+        if: steps.tinygo-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL -o /tmp/tinygo.deb \
             https://github.com/tinygo-org/tinygo/releases/download/v0.40.1/tinygo_0.40.1_amd64.deb
@@ -170,9 +214,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
+      # `cache: 'npm'` caches `~/.npm` (npm's tarball cache) keyed on the
+      # plugin's lockfile. Subprocess `npm install` calls in the test (each
+      # subtest installs the generated CLI's deps in a fresh tempdir) inherit
+      # the same cacache directory, so they hit cached tarballs instead of
+      # re-downloading on every run.
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: plugins/generator-typescript-cli/package-lock.json
       - name: Build TS plugin
         run: bash plugins/generator-typescript-cli/build.sh
       - run: cargo nextest run -p forge-plugin-itests --features typescript-cli --test generator_typescript_cli
