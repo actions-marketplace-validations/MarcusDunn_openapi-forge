@@ -8,6 +8,8 @@ Pre-1.0, the IR is unstable. Every release that touches the IR carries an
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-05-13
+
 ## [0.1.10] - 2026-05-13
 
 ## [0.1.9] - 2026-05-07
