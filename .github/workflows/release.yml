@@ -220,6 +220,102 @@ jobs:
           gh release upload "$TAG" target/package/*.crate --clobber
 
   # ----------------------------------------------------------------------
+  # Build native release binaries for each target platform, attest their
+  # provenance, and stage them as workflow artifacts for the upload job.
+  # Runs in parallel with `publish` (only needs `verify`).
+  # ----------------------------------------------------------------------
+  build-binaries:
+    needs: verify
+    if: >-
+      github.event_name == 'release'
+      && !github.event.release.prerelease
+      && !github.event.release.draft
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest        # ARM64 (M-series)
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest       # x86_64
+            target: x86_64-unknown-linux-gnu
+    permissions:
+      id-token: write       # Sigstore signing via actions/attest-build-provenance
+      attestations: write
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked -p openapi-forge-cli
+
+      - name: Create archive
+        id: archive
+        run: |
+          set -euo pipefail
+          name="forge-v${VERSION}-${{ matrix.target }}"
+          mkdir "$name"
+          cp target/release/forge "$name/"
+          cp LICENSE-APACHE LICENSE-MIT "$name/"
+          tar czf "${name}.tar.gz" "$name"
+          echo "path=${name}.tar.gz" >>"$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ steps.archive.outputs.path }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: ${{ steps.archive.outputs.path }}
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------------
+  # Download platform archives from the build matrix, generate a combined
+  # SHA-256 checksum file, attest it, and upload everything to the release.
+  # ----------------------------------------------------------------------
+  upload-binaries:
+    needs: [verify, build-binaries]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write         # gh release upload
+      id-token: write         # Sigstore signing
+      attestations: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum forge-v*.tar.gz | tee "forge-v${VERSION}-SHA256SUMS"
+
+      - name: Attest checksums provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/forge-v${{ env.VERSION }}-SHA256SUMS
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber
+
+  # ----------------------------------------------------------------------
   # Publish the two minimal test-fixture plugins to GHCR so the CLI's OCI
   # pull path has a stable, public artifact to exercise. Best-effort —
   # `continue-on-error: true` and no incoming `needs` edge from prep-next
