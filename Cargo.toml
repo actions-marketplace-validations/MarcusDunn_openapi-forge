@@ -78,7 +78,7 @@ wit-bindgen-rt = "0.36"
 # Testing
 proptest = "1.6"
 insta = { version = "1.41", features = ["yaml", "json"] }
-assert_cmd = "2.0"
+assert_cmd = "2.2"
 predicates = "3.1"
 pretty_assertions = "1.4"
 tempfile = "3.13"
