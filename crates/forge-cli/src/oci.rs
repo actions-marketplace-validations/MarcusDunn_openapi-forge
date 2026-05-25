@@ -449,6 +449,7 @@ mod tests {
                 size: config_blob.len() as i64,
                 urls: None,
                 annotations: None,
+                artifact_type: None,
             },
             layers: vec![OciDescriptor {
                 media_type: "application/wasm".to_string(),
@@ -456,6 +457,7 @@ mod tests {
                 size: payload.len() as i64,
                 urls: None,
                 annotations: None,
+                artifact_type: None,
             }],
             subject: None,
             artifact_type: None,
