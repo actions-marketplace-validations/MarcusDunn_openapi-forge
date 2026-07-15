@@ -84,7 +84,7 @@ runs:
     # ------------------------------------------------------------------
     - name: Restore cached binary
       id: cache
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ steps.resolve.outputs.cache-dir }}
         key: ${{ steps.resolve.outputs.cache-key }}
