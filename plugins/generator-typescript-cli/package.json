@@ -10,9 +10,9 @@
     "componentize": "jco componentize dist/component.js --wit ../../wit --world-name code-generator --disable all -o plugin.wasm"
   },
   "devDependencies": {
-    "@bytecodealliance/jco": "1.19.0",
-    "@bytecodealliance/componentize-js": "0.21.0",
-    "esbuild": "0.28.0",
+    "@bytecodealliance/jco": "1.26.1",
+    "@bytecodealliance/componentize-js": "0.22.0",
+    "esbuild": "0.28.1",
     "typescript": "6.0.3"
   }
 }
