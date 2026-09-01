@@ -35,7 +35,10 @@ pub fn render_type_ref(spec: &ir::Ir, type_ref: &ir::TypeRef) -> String {
             }
             None => named_ref(nt),
         },
-        ir::TypeDef::EnumString(_) | ir::TypeDef::EnumInt(_) => named_ref(nt),
+        ir::TypeDef::EnumString(_)
+        | ir::TypeDef::EnumInt(_)
+        | ir::TypeDef::EnumBool(_)
+        | ir::TypeDef::EnumNumber(_) => named_ref(nt),
         ir::TypeDef::Union(u) => {
             // A multi-variant union that *contains* Null is rendered as
             // `Option<EnumName>` — the enum body filters the Null variant
@@ -50,6 +53,9 @@ pub fn render_type_ref(spec: &ir::Ir, type_ref: &ir::TypeRef) -> String {
         // round-trips it as `()`. Generators rarely render this directly
         // because nullable wraps go through `peel_nullable` above.
         ir::TypeDef::Null => "()".into(),
+        // The "any" schema (`{}` / `true`) accepts any JSON value, rendered as
+        // `serde_json::Value`.
+        ir::TypeDef::Any => "serde_json::Value".into(),
     }
 }
 
@@ -137,6 +143,8 @@ pub fn render_named_type(spec: &ir::Ir, nt: &ir::NamedType) -> Option<String> {
         ir::TypeDef::Array(a) => Some(render_array_alias(spec, nt, a)),
         ir::TypeDef::EnumString(e) => Some(render_enum_string(nt, e)),
         ir::TypeDef::EnumInt(e) => Some(render_enum_int(nt, e)),
+        ir::TypeDef::EnumBool(e) => Some(render_enum_bool(nt, e)),
+        ir::TypeDef::EnumNumber(e) => Some(render_enum_number(nt, e)),
         ir::TypeDef::Union(u) => Some(render_union(spec, nt, u)),
         // Null is a marker; the singleton is never emitted as a top-level
         // Rust item. Named Null aliases (e.g. `components.schemas.Foo:
@@ -150,6 +158,14 @@ pub fn render_named_type(spec: &ir::Ir, nt: &ir::NamedType) -> Option<String> {
                 s.push_str(&format!("pub type {name} = ();\n"));
                 Some(s)
             }
+        }
+        // The "any" schema (`{}` / `true`): a named alias emits as
+        // `pub type Foo = serde_json::Value;` (any JSON value).
+        ir::TypeDef::Any => {
+            let name = named_ref(nt);
+            let mut s = doc_comment(nt.description.as_deref());
+            s.push_str(&format!("pub type {name} = serde_json::Value;\n"));
+            Some(s)
         }
     }
 }
@@ -340,6 +356,93 @@ fn render_enum_int(nt: &ir::NamedType, e: &ir::EnumIntType) -> String {
     s.push_str("    }\n");
     s.push_str("}\n");
     s
+}
+
+fn render_enum_bool(nt: &ir::NamedType, e: &ir::EnumBoolType) -> String {
+    let name = named_ref(nt);
+    let mut s = doc_comment(nt.description.as_deref());
+    s.push_str("#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]\n");
+    s.push_str(&format!("pub enum {name} {{\n"));
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // (variant_ident, wire_value) pairs — for the Display impl below.
+    let mut variants: Vec<(String, bool)> = Vec::with_capacity(e.values.len());
+    for v in &e.values {
+        let variant = disambiguate(if v.value { "True" } else { "False" }, &mut used);
+        s.push_str(&format!("    {variant},\n"));
+        variants.push((variant, v.value));
+    }
+    s.push_str("}\n");
+
+    // Display writes the JSON wire form (`true` / `false`) — usable as a
+    // query / header / path param value (#48).
+    s.push_str(&format!("impl std::fmt::Display for {name} {{\n"));
+    s.push_str("    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+    if variants.is_empty() {
+        s.push_str("        match *self {}\n");
+    } else {
+        s.push_str("        match self {\n");
+        for (variant, val) in &variants {
+            s.push_str(&format!(
+                "            Self::{variant} => f.write_str(\"{val}\"),\n"
+            ));
+        }
+        s.push_str("        }\n");
+    }
+    s.push_str("    }\n");
+    s.push_str("}\n");
+    s
+}
+
+fn render_enum_number(nt: &ir::NamedType, e: &ir::EnumNumberType) -> String {
+    let name = named_ref(nt);
+    let mut s = doc_comment(nt.description.as_deref());
+    // f64 values rule out `Eq` / `Hash` and `#[repr]`; emit a fieldless
+    // enum whose Display writes the numeric literal (#48). The `float`
+    // refinement is documentation-only here — generated as f64-equivalent.
+    s.push_str("#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]\n");
+    s.push_str(&format!("pub enum {name} {{\n"));
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut variants: Vec<(String, String)> = Vec::with_capacity(e.values.len());
+    for v in &e.values {
+        let literal = format_f64(v.value);
+        let digits: String = literal
+            .trim_start_matches('-')
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        let raw = if v.value < 0.0 {
+            format!("Neg{digits}")
+        } else {
+            format!("V{digits}")
+        };
+        let variant = disambiguate(&raw, &mut used);
+        s.push_str(&format!("    {variant},\n"));
+        variants.push((variant, literal));
+    }
+    s.push_str("}\n");
+
+    s.push_str(&format!("impl std::fmt::Display for {name} {{\n"));
+    s.push_str("    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+    if variants.is_empty() {
+        s.push_str("        match *self {}\n");
+    } else {
+        s.push_str("        match self {\n");
+        for (variant, literal) in &variants {
+            s.push_str(&format!(
+                "            Self::{variant} => f.write_str(\"{literal}\"),\n"
+            ));
+        }
+        s.push_str("        }\n");
+    }
+    s.push_str("    }\n");
+    s.push_str("}\n");
+    s
+}
+
+/// Shortest round-trippable decimal for an f64 (Rust's default `Display`).
+/// `2.0` → `"2"`, `1.5` → `"1.5"`.
+fn format_f64(v: f64) -> String {
+    v.to_string()
 }
 
 fn render_union(spec: &ir::Ir, nt: &ir::NamedType, u: &ir::UnionType) -> String {

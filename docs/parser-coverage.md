@@ -94,9 +94,7 @@ YAML input is **not** supported. Specs must be JSON.
     emit `parser/E-OAUTH2-MISSING-URL`. `openIdConnect` carries the
     discovery URL on `SecuritySchemeKind::OpenIdConnect.url`; clients
     perform `.well-known/openid-configuration` discovery themselves.
-    Acted on by `generator-typescript-cli`'s login flow when plugin
-    config supplies a `clientId`; other generators leave auth
-    injection to the consumer.
+    The in-tree generators leave auth injection to the consumer.
   - `mutualTLS` (3.0+) — produces `SecuritySchemeKind::MutualTls` (no
     payload). The IR carries the declaration; client-cert provisioning
     is left to the consumer's transport configuration (e.g.
@@ -347,7 +345,7 @@ to `forge`.
 1. `openIdConnect` discovery (`.well-known/openid-configuration` fetch)
    plus other `oauth2` flow kinds (`clientCredentials`, `password`,
    `implicit`) — issue #27 follow-ups. The `authorizationCode` flow now
-   parses; `generator-typescript-cli` consumes it.
+   parses; no in-tree generator consumes it.
 2. URL-based `$ref` (HTTP fetch + caching policy) — follow-up to #28.
 3. 3.1 `pathItems` in `components` — follow-up.
 4. 3.2 `additionalOperations` real support — needs WIT

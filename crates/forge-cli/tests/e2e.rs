@@ -88,6 +88,126 @@ dir = "out"
     assert!(out.contains("GET /things/{id}"), "body: {out}");
 }
 
+/// Multi-pipeline layout: a single `forge.toml` declares two
+/// `[[pipelines]]`, each its own transforms → generator stack writing to
+/// its own `[output]`. Both must run from one `forge generate`, sharing the
+/// top-level `[input]`. Exercises shared-input fallback, per-pipeline
+/// output dirs, and the per-pipeline config block.
+#[test]
+fn generate_multiple_pipelines() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    let petstore = repo_root().join("fixtures/e2e/petstore/spec.json");
+    let spec = std::fs::read_to_string(&petstore).expect("read petstore spec");
+    std::fs::write(project.join("spec.json"), spec).unwrap();
+
+    let xform_wasm = plugin_artifact("transformer_noop");
+    let ts_wasm = plugin_artifact("generator_typescript_fetch");
+    let dump_wasm = plugin_artifact("generator_debug_dump");
+
+    // Pipeline `ts` chains a transformer into the TypeScript generator;
+    // pipeline `dump` runs the debug-dump generator straight off the shared
+    // input. Neither declares its own [input].
+    let toml = format!(
+        r#"
+[input]
+spec = "spec.json"
+
+[[pipelines]]
+name = "ts"
+
+[[pipelines.transformers]]
+wasm = "{xform}"
+
+[pipelines.generator]
+wasm = "{ts}"
+config = {{ packageName = "petstore-client" }}
+
+[pipelines.output]
+dir = "out/ts"
+
+[[pipelines]]
+name = "dump"
+
+[pipelines.generator]
+wasm = "{dump}"
+
+[pipelines.output]
+dir = "out/dump"
+"#,
+        xform = xform_wasm.display(),
+        ts = ts_wasm.display(),
+        dump = dump_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    Command::cargo_bin("forge")
+        .unwrap()
+        .arg("generate")
+        .arg(project)
+        .assert()
+        .success();
+
+    // First pipeline's TypeScript output.
+    let client =
+        std::fs::read_to_string(project.join("out/ts/src/client.ts")).expect("ts client.ts");
+    assert!(client.contains("export class ApiClient"), "{client}");
+    let pkg =
+        std::fs::read_to_string(project.join("out/ts/package.json")).expect("ts package.json");
+    assert!(pkg.contains("\"name\": \"petstore-client\""), "{pkg}");
+
+    // Second pipeline's debug-dump output, written to a separate dir.
+    let dump = std::fs::read_to_string(project.join("out/dump/ir.txt")).expect("dump ir.txt");
+    assert!(dump.contains("title:"), "{dump}");
+}
+
+/// Mixing the single-pipeline top-level stack with `[[pipelines]]` is
+/// ambiguous and must be rejected with a clear error rather than silently
+/// preferring one.
+#[test]
+fn generate_mixed_layout_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    std::fs::write(project.join("ir.json"), SAMPLE_IR).unwrap();
+    let gen_wasm = plugin_artifact("generator_debug_dump");
+
+    let toml = format!(
+        r#"
+[input]
+ir = "ir.json"
+
+[generator]
+wasm = "{gen}"
+
+[output]
+dir = "out"
+
+[[pipelines]]
+name = "extra"
+
+[pipelines.generator]
+wasm = "{gen}"
+
+[pipelines.output]
+dir = "out2"
+"#,
+        gen = gen_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    Command::cargo_bin("forge")
+        .unwrap()
+        .arg("generate")
+        .arg(project)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "mixes the single-pipeline layout",
+        ));
+}
+
 #[test]
 fn generate_from_petstore_spec() {
     let dir = tempfile::tempdir().unwrap();
@@ -334,14 +454,145 @@ fn generate_config_less_requires_generator() {
         .stderr(predicates::str::contains("--generator is required"));
 }
 
+/// `[limits]` in `forge.toml` overrides the built-in sandbox limits.
+/// Raising every knob must still let a normal run succeed.
+#[test]
+fn generate_with_raised_limits_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    std::fs::write(project.join("ir.json"), SAMPLE_IR).unwrap();
+
+    let xform_wasm = plugin_artifact("transformer_noop");
+    let gen_wasm = plugin_artifact("generator_debug_dump");
+
+    let toml = format!(
+        r#"
+[input]
+ir = "ir.json"
+
+[[transformers]]
+wasm = "{xform}"
+
+[generator]
+wasm = "{gen}"
+
+[output]
+dir = "out"
+
+[limits.transformer]
+fuel = 10000000000
+wall_clock_ms = 10000
+
+[limits.generator]
+fuel = 100000000000
+memory_bytes = 1073741824
+output_files_max = 50000
+output_total_bytes_max = 1073741824
+output_per_file_bytes_max = 134217728
+"#,
+        xform = xform_wasm.display(),
+        gen = gen_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    Command::cargo_bin("forge")
+        .unwrap()
+        .arg("generate")
+        .arg(project)
+        .assert()
+        .success();
+
+    let out = std::fs::read_to_string(project.join("out/ir.txt")).expect("output file");
+    assert!(out.contains("title:    test-api"), "body: {out}");
+}
+
+/// Lowered limits are enforced, not just parsed: a one-unit fuel budget
+/// must trap the generator with a fuel-exhaustion error.
+#[test]
+fn generate_with_tiny_fuel_limit_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    std::fs::write(project.join("ir.json"), SAMPLE_IR).unwrap();
+
+    let gen_wasm = plugin_artifact("generator_debug_dump");
+
+    let toml = format!(
+        r#"
+[input]
+ir = "ir.json"
+
+[generator]
+wasm = "{gen}"
+
+[output]
+dir = "out"
+
+[limits.generator]
+fuel = 1
+"#,
+        gen = gen_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    Command::cargo_bin("forge")
+        .unwrap()
+        .arg("generate")
+        .arg(project)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("exceeded Fuel"));
+}
+
+/// A typo'd key in `[limits]` fails the run loudly instead of silently
+/// keeping the default.
+#[test]
+fn generate_with_unknown_limit_key_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    std::fs::write(project.join("ir.json"), SAMPLE_IR).unwrap();
+
+    let gen_wasm = plugin_artifact("generator_debug_dump");
+
+    let toml = format!(
+        r#"
+[input]
+ir = "ir.json"
+
+[generator]
+wasm = "{gen}"
+
+[output]
+dir = "out"
+
+[limits.generator]
+feul = 100
+"#,
+        gen = gen_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    Command::cargo_bin("forge")
+        .unwrap()
+        .arg("generate")
+        .arg(project)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("failed to parse forge.toml"));
+}
+
 #[test]
 fn ir_version_subcommand() {
+    // The subcommand prints the crate version. Compare against the same
+    // value, so a version bump does not break this test.
     Command::cargo_bin("forge")
         .unwrap()
         .arg("ir-version")
         .assert()
         .success()
-        .stdout(predicates::str::starts_with("0."));
+        .stdout(format!("{}\n", env!("CARGO_PKG_VERSION")));
 }
 
 /// Regression: the CLI previously read the spec into memory and called
@@ -396,5 +647,80 @@ dir = "out"
     assert!(
         out.contains("updateNoteSavedView"),
         "missing updateNoteSavedView: {out}"
+    );
+}
+
+/// `post_generate` hooks receive `FORGE_OUT_DIR` and `FORGE_MANIFEST_DIR`
+/// as absolute paths, even when the project is addressed by a relative
+/// path. The hook runs with the output dir as its cwd, so relative anchors
+/// would be near-useless; this pins the absolute-path contract both vars
+/// promise.
+#[test]
+fn post_generate_hook_gets_absolute_env_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path();
+
+    std::fs::write(project.join("ir.json"), SAMPLE_IR).unwrap();
+
+    let xform_wasm = plugin_artifact("transformer_noop");
+    let gen_wasm = plugin_artifact("generator_debug_dump");
+
+    // The hook writes both env vars to a file in its cwd (the output dir).
+    // Exec form keeps the argv portable across shells.
+    let toml = format!(
+        r#"
+[input]
+ir = "ir.json"
+
+[[transformers]]
+wasm = "{xform}"
+
+[generator]
+wasm = "{gen}"
+
+[output]
+dir = "out"
+
+[hooks]
+post_generate = [{{ cmd = ["sh", "-c", "printf '%s\n%s\n' \"$FORGE_OUT_DIR\" \"$FORGE_MANIFEST_DIR\" > env.txt"] }}]
+"#,
+        xform = xform_wasm.display(),
+        gen = gen_wasm.display(),
+    );
+    std::fs::write(project.join("forge.toml"), toml).unwrap();
+
+    // Invoke with the project addressed relatively (`.` is the default
+    // positional) from inside the project dir, so the env vars would be
+    // relative unless the CLI absolutizes them.
+    Command::cargo_bin("forge")
+        .unwrap()
+        .current_dir(project)
+        .arg("generate")
+        .assert()
+        .success();
+
+    let env_dump = std::fs::read_to_string(project.join("out/env.txt")).expect("hook env file");
+    let mut lines = env_dump.lines();
+    let out_dir = Path::new(lines.next().expect("FORGE_OUT_DIR line"));
+    let manifest_dir = Path::new(lines.next().expect("FORGE_MANIFEST_DIR line"));
+
+    assert!(
+        out_dir.is_absolute(),
+        "FORGE_OUT_DIR not absolute: {}",
+        out_dir.display()
+    );
+    assert!(
+        manifest_dir.is_absolute(),
+        "FORGE_MANIFEST_DIR not absolute: {}",
+        manifest_dir.display()
+    );
+    // Resolve symlinks (e.g. macOS /var -> /private/var) before comparing.
+    assert_eq!(
+        out_dir.canonicalize().unwrap(),
+        project.join("out").canonicalize().unwrap()
+    );
+    assert_eq!(
+        manifest_dir.canonicalize().unwrap(),
+        project.canonicalize().unwrap()
     );
 }

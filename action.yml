@@ -8,7 +8,7 @@ branding:
 inputs:
   version:
     description: >-
-      Forge version to install (e.g. "0.1.13" or "v0.1.13"; the leading v
+      Forge version to install (e.g. "1.0.2" or "v1.0.2"; the leading v
       is stripped automatically). Default: latest release.
     required: false
     default: 'latest'
@@ -84,7 +84,7 @@ runs:
     # ------------------------------------------------------------------
     - name: Restore cached binary
       id: cache
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ steps.resolve.outputs.cache-dir }}
         key: ${{ steps.resolve.outputs.cache-key }}

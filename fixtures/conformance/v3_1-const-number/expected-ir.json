@@ -1,0 +1,28 @@
+{
+  "info": {
+    "title": "v3_1-const-number",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Ratio",
+      "original_name": "Ratio",
+      "definition": {
+        "def": "enum-number",
+        "values": [
+          {
+            "value": 1.5
+          }
+        ],
+        "kind": "double"
+      },
+      "location": {
+        "pointer": "/components/schemas/Ratio",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

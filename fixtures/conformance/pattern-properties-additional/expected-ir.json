@@ -1,0 +1,111 @@
+{
+  "info": {
+    "title": "pattern-properties-additional",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Mixed_additional_properties",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed/additionalProperties",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Mixed_pattern_property__I_",
+      "definition": {
+        "def": "primitive",
+        "kind": "integer",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed/patternProperties/^I_",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Mixed_pattern_property__S_",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed/patternProperties/^S_",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Mixed_property_builtin",
+      "definition": {
+        "def": "primitive",
+        "kind": "number",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed/properties/builtin",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Mixed",
+      "original_name": "Mixed",
+      "definition": {
+        "def": "object",
+        "properties": [
+          {
+            "name": "builtin",
+            "type": "Mixed_property_builtin",
+            "required": false,
+            "deprecated": false,
+            "read_only": false,
+            "write_only": false
+          }
+        ],
+        "pattern_properties": [
+          {
+            "pattern": "^I_",
+            "type": "Mixed_pattern_property__I_"
+          },
+          {
+            "pattern": "^S_",
+            "type": "Mixed_pattern_property__S_"
+          }
+        ],
+        "additional_properties": {
+          "kind": "typed",
+          "type": "Mixed_additional_properties"
+        },
+        "property_names": "Mixed_property_names",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Mixed_property_names",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {
+          "min_length": 1,
+          "max_length": 64
+        }
+      },
+      "location": {
+        "pointer": "/components/schemas/Mixed/propertyNames",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

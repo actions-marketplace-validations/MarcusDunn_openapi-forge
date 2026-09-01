@@ -1,0 +1,98 @@
+{
+  "info": {
+    "title": "pattern-properties-allof",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Base",
+      "original_name": "Base",
+      "definition": {
+        "def": "object",
+        "properties": [],
+        "pattern_properties": [
+          {
+            "pattern": "^x-",
+            "type": "Base_pattern_property__x_"
+          }
+        ],
+        "additional_properties": {
+          "kind": "any"
+        },
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Base",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Base_pattern_property__x_",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Base/patternProperties/^x-",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Derived",
+      "original_name": "Derived",
+      "definition": {
+        "def": "object",
+        "properties": [],
+        "pattern_properties": [
+          {
+            "pattern": "^x-",
+            "type": "Base_pattern_property__x_"
+          },
+          {
+            "pattern": "^y-",
+            "type": "Derived_allof_part_1_pattern_property__y_"
+          }
+        ],
+        "additional_properties": {
+          "kind": "any"
+        },
+        "property_names": "Derived_allof_part_1_property_names",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Derived",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Derived_allof_part_1_pattern_property__y_",
+      "definition": {
+        "def": "primitive",
+        "kind": "integer",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Derived/allOf/1/patternProperties/^y-",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Derived_allof_part_1_property_names",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {
+          "pattern": "^[a-z-]+$"
+        }
+      },
+      "location": {
+        "pointer": "/components/schemas/Derived/allOf/1/propertyNames",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

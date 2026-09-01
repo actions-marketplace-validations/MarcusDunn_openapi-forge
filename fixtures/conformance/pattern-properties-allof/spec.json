@@ -1,0 +1,23 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "pattern-properties-allof", "version": "1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Base": {
+        "type": "object",
+        "patternProperties": { "^x-": { "type": "string" } }
+      },
+      "Derived": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Base" },
+          {
+            "type": "object",
+            "patternProperties": { "^y-": { "type": "integer" } },
+            "propertyNames": { "pattern": "^[a-z-]+$" }
+          }
+        ]
+      }
+    }
+  }
+}

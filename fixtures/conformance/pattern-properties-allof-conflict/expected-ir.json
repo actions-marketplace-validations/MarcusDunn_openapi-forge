@@ -1,0 +1,86 @@
+{
+  "info": {
+    "title": "pattern-properties-allof-conflict",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Conflicting",
+      "original_name": "Conflicting",
+      "definition": {
+        "def": "object",
+        "properties": [],
+        "pattern_properties": [
+          {
+            "pattern": "^x-",
+            "type": "Conflicting_allof_part_1_pattern_property__x_"
+          }
+        ],
+        "additional_properties": {
+          "kind": "any"
+        },
+        "property_names": "Conflicting_allof_part_1_property_names",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Conflicting",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Conflicting_allof_part_0_pattern_property__x_",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Conflicting/allOf/0/patternProperties/^x-",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Conflicting_allof_part_0_property_names",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {
+          "pattern": "^a"
+        }
+      },
+      "location": {
+        "pointer": "/components/schemas/Conflicting/allOf/0/propertyNames",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Conflicting_allof_part_1_pattern_property__x_",
+      "definition": {
+        "def": "primitive",
+        "kind": "integer",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Conflicting/allOf/1/patternProperties/^x-",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Conflicting_allof_part_1_property_names",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {
+          "pattern": "^b"
+        }
+      },
+      "location": {
+        "pointer": "/components/schemas/Conflicting/allOf/1/propertyNames",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

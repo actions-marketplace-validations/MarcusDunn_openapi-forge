@@ -76,8 +76,7 @@ fn render_auth_config_type(spec: &ir::Ir) -> String {
             // auth-injection code — library consumers are expected to
             // run the OAuth flow themselves and pass the resulting
             // bearer token via the existing bearer arm if applicable.
-            // The standalone `generator-typescript-cli` is where login
-            // logic lives.
+            // No in-tree generator holds login logic.
             // mTLS auth happens at the transport layer; consumers wire
             // up client certificates against fetch / Node tls themselves.
             ir::SecuritySchemeKind::Oauth2(_)

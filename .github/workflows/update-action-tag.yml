@@ -19,7 +19,7 @@ jobs:
       && !github.event.release.draft
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Move v1 tag to this release
         env:

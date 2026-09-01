@@ -8,8 +8,8 @@
 use forge_ir::{
     AdditionalProperties, ArrayConstraints, ArrayType, Discriminator, EnumIntType, EnumIntValue,
     EnumStringType, EnumStringValue, IntKind, NamedType, ObjectConstraints, ObjectType,
-    PrimitiveConstraints, PrimitiveKind, PrimitiveType, Property, TypeDef, TypeRef, UnionKind,
-    UnionType, UnionVariant, NULL_ID,
+    PatternProperty, PrimitiveConstraints, PrimitiveKind, PrimitiveType, Property, TypeDef,
+    TypeRef, UnionKind, UnionType, UnionVariant, NULL_ID,
 };
 use serde_json::Value as J;
 
@@ -334,11 +334,11 @@ fn parse_freeform(
             }
         }
     }
-    let obj = ObjectType {
-        properties: vec![],
-        additional_properties: AdditionalProperties::Any,
-        constraints: ObjectConstraints::default(),
-    };
+    // A schema with no `type` (and no composition keyword) is the JSON Schema
+    // "any" schema — equivalent to `{}` / boolean `true` — which validates ANY
+    // instance, not just objects. Lower it to `TypeDef::Any` rather than an
+    // empty permissive object (`{"type":"object"}`), which would incorrectly
+    // reject non-object instances (strings, numbers, arrays, …).
     let extensions = crate::operations::collect_extensions(ctx, map, ptr);
     let nt = NamedType {
         id: alloc_id(ctx, &hint),
@@ -352,7 +352,7 @@ fn parse_freeform(
         default: crate::parse_default(ctx, map, ptr, "schema"),
         examples: crate::parse_examples(ctx, map, ptr),
         xml: crate::parse_xml(ctx, map, ptr),
-        definition: TypeDef::Object(obj),
+        definition: TypeDef::Any,
         extensions,
         location: Some(ptr.loc(ctx.file)),
     };
@@ -615,7 +615,7 @@ pub(crate) fn resolver_error_message(raw: &str, e: &crate::external::ResolverErr
 pub(crate) fn ensure_doc_registered(
     ctx: &mut Ctx,
     canonical: &std::path::Path,
-    root: &serde_json::Value,
+    root: &std::sync::Arc<serde_json::Value>,
 ) {
     // The root cache is keyed independently of `doc_prefix` so the main
     // spec (which has an empty prefix pre-registered by `Ctx::with_resolver`)
@@ -623,7 +623,7 @@ pub(crate) fn ensure_doc_registered(
     // matters when an external doc refs back into the main spec.
     ctx.doc_roots
         .entry(canonical.to_path_buf())
-        .or_insert_with(|| root.clone());
+        .or_insert_with(|| std::sync::Arc::clone(root));
     if ctx.doc_prefix.contains_key(canonical) {
         return;
     }
@@ -640,7 +640,7 @@ pub(crate) fn ensure_doc_registered(
         }
     }
     if !registered_anything {
-        if let serde_json::Value::Object(map) = root {
+        if let serde_json::Value::Object(map) = root.as_ref() {
             for name in map.keys() {
                 idx.register(crate::sanitize::ident(name));
             }
@@ -971,6 +971,7 @@ fn parse_object(
             p.required = true;
         }
     }
+    let pattern_properties = parse_pattern_properties(ctx, map, ptr, &id);
     let additional = match map.get("additionalProperties") {
         Some(J::Bool(false)) => AdditionalProperties::Forbidden,
         Some(J::Bool(true)) | None => AdditionalProperties::Any,
@@ -994,13 +995,16 @@ fn parse_object(
             AdditionalProperties::Any
         }
     };
+    let property_names = parse_property_names(ctx, map, ptr, &id);
     let constraints = ObjectConstraints {
         min_properties: map.get("minProperties").and_then(J::as_u64),
         max_properties: map.get("maxProperties").and_then(J::as_u64),
     };
     let obj = ObjectType {
         properties,
+        pattern_properties,
         additional_properties: additional,
+        property_names,
         constraints,
     };
     let extensions = crate::operations::collect_extensions(ctx, map, ptr);
@@ -1021,6 +1025,77 @@ fn parse_object(
         location: Some(ptr.loc(ctx.file)),
     };
     Some(maybe_wrap_nullable(ctx, nt, nullable))
+}
+
+/// Parse JSON Schema `patternProperties` (2020-12 §10.3.2.2) into IR
+/// entries. The keyword's value is an object whose keys are ECMA-262
+/// regexes and whose values are the schemas that property *values* under
+/// a matching name must satisfy. Inline value schemas are lifted under
+/// `<owner>_pattern_property_<sanitized-regex>`. A non-object keyword
+/// value carries no entries — same as omitting the keyword — so we return
+/// an empty vec rather than erroring.
+pub(crate) fn parse_pattern_properties(
+    ctx: &mut Ctx,
+    map: &serde_json::Map<String, J>,
+    ptr: &mut Ptr,
+    owner_id: &str,
+) -> Vec<PatternProperty> {
+    let mut out = Vec::new();
+    if let Some(J::Object(pats)) = map.get("patternProperties") {
+        ptr.with_token("patternProperties", |ptr| {
+            for (pattern, schema) in pats {
+                ptr.with_token(pattern, |ptr| {
+                    let role = format!("pattern_property_{}", crate::sanitize::ident(pattern));
+                    if let Some(t) =
+                        parse_schema(ctx, schema, ptr, NameHint::inline(owner_id, &role))
+                    {
+                        out.push(PatternProperty {
+                            pattern: pattern.clone(),
+                            r#type: t,
+                        });
+                    }
+                });
+            }
+        });
+    }
+    out
+}
+
+/// Parse JSON Schema `propertyNames` (2020-12 §10.3.2.4) into a `TypeRef`
+/// the property *names* must satisfy. Returns `None` when the keyword is
+/// absent or is a boolean schema (`true` is the no-op; `false`/other
+/// boolean shapes carry no string constraint the IR can surface).
+///
+/// Property names are always strings, and the canonical `propertyNames`
+/// schema omits `type` — e.g. `{ "pattern": "^[A-Za-z_]\w*$" }`. So a
+/// typeless, non-`$ref` schema is defaulted to `type: "string"` before
+/// walking, ensuring `pattern` / `minLength` / `maxLength` / `format`
+/// land on a string primitive instead of being dropped into a freeform
+/// `any`.
+pub(crate) fn parse_property_names(
+    ctx: &mut Ctx,
+    map: &serde_json::Map<String, J>,
+    ptr: &mut Ptr,
+    owner_id: &str,
+) -> Option<TypeRef> {
+    let J::Object(pn) = map.get("propertyNames")? else {
+        return None;
+    };
+    let effective: J = if pn.contains_key("type") || pn.contains_key("$ref") {
+        J::Object(pn.clone())
+    } else {
+        let mut m = pn.clone();
+        m.insert("type".to_string(), J::String("string".to_string()));
+        J::Object(m)
+    };
+    ptr.with_token("propertyNames", |ptr| {
+        parse_schema(
+            ctx,
+            &effective,
+            ptr,
+            NameHint::inline(owner_id, "property_names"),
+        )
+    })
 }
 
 fn parse_string_enum(
@@ -1300,11 +1375,13 @@ fn parse_type_array_union(
     Some(id)
 }
 
-/// 3.1 `const` keyword. Single literal value of any primitive type. We
-/// fold it into the matching single-value enum so the existing IR shape
-/// covers it without a new `ConstType`. `const: null` resolves to a
-/// `TypeDef::Null` node (named, when the user gave it a name; otherwise
-/// the canonical singleton). See issue #107.
+/// 3.1 `const` keyword. Single literal value of any scalar type. We fold
+/// it into the matching single-value enum so the existing IR shapes cover
+/// it without a new `ConstType`: strings → `EnumString`, integers →
+/// `EnumInt`, non-integer numbers → `EnumNumber`, booleans → `EnumBool`.
+/// `const: null` resolves to a `TypeDef::Null` node (named, when the user
+/// gave it a name; otherwise the canonical singleton). Array- and
+/// object-typed `const` are not yet supported. See issue #107.
 fn parse_const(
     ctx: &mut Ctx,
     map: &serde_json::Map<String, J>,
@@ -1313,31 +1390,46 @@ fn parse_const(
     hint: NameHint,
     nullable: bool,
 ) -> Option<TypeRef> {
-    use forge_ir::{EnumIntType, EnumIntValue, EnumStringType, EnumStringValue, IntKind};
+    use forge_ir::{
+        EnumBoolType, EnumBoolValue, EnumIntType, EnumIntValue, EnumNumberType, EnumNumberValue,
+        EnumStringType, EnumStringValue, IntKind, NumberKind,
+    };
     let nt_definition = match c {
         J::String(s) => TypeDef::EnumString(EnumStringType {
             values: vec![EnumStringValue { value: s.clone() }],
         }),
+        J::Bool(b) => TypeDef::EnumBool(EnumBoolType {
+            values: vec![EnumBoolValue { value: *b }],
+        }),
         J::Number(n) => {
-            let Some(int) = n.as_i64() else {
+            // Integers stay on `EnumInt`; any other number (a genuine
+            // fraction, or a magnitude beyond i64) becomes an `EnumNumber`.
+            if let Some(int) = n.as_i64() {
+                let kind = match map.get("format").and_then(J::as_str) {
+                    Some("int64") => IntKind::Int64,
+                    _ => IntKind::Int32,
+                };
+                TypeDef::EnumInt(EnumIntType {
+                    values: vec![EnumIntValue { value: int }],
+                    kind,
+                })
+            } else if let Some(float) = n.as_f64() {
+                let kind = match map.get("format").and_then(J::as_str) {
+                    Some("float") => NumberKind::Float,
+                    _ => NumberKind::Double,
+                };
+                TypeDef::EnumNumber(EnumNumberType {
+                    values: vec![EnumNumberValue { value: float }],
+                    kind,
+                })
+            } else {
                 ctx.push_diag(diag::err(
                     diag::E_INVALID_TYPE,
-                    format!(
-                        "`const: {n}` is a non-integer number; integer-, string-, and \
-                         null-typed `const` values are supported."
-                    ),
+                    format!("`const: {n}` is not representable as a finite number"),
                     ptr.loc(ctx.file),
                 ));
                 return None;
-            };
-            let kind = match map.get("format").and_then(J::as_str) {
-                Some("int64") => IntKind::Int64,
-                _ => IntKind::Int32,
-            };
-            TypeDef::EnumInt(EnumIntType {
-                values: vec![EnumIntValue { value: int }],
-                kind,
-            })
+            }
         }
         J::Null => {
             // `const: null` means the value is exactly null. For inline
@@ -1378,7 +1470,8 @@ fn parse_const(
             ctx.push_diag(diag::err(
                 diag::E_INVALID_TYPE,
                 format!(
-                    "`const` value `{}` is not a string, integer, or null",
+                    "`const` value `{}` is not a scalar; string, number, boolean, and null \
+                     `const` values are supported (array and object are not)",
                     serde_json::to_string(other).unwrap_or_default()
                 ),
                 ptr.loc(ctx.file),

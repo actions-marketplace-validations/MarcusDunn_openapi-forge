@@ -161,6 +161,28 @@ fn integer_enum_renders_as_repr_int_enum() {
 }
 
 #[test]
+fn boolean_const_renders_as_rust_enum() {
+    let out = run_with(ir_for("v3_1-const-boolean"), serde_json::json!({}));
+    let s = body(file(&out, "src/models.rs"));
+    assert!(s.contains("pub enum Enabled {"), "{s}");
+    assert!(s.contains("True,"), "{s}");
+    // #48: Display writes the boolean wire form.
+    assert!(s.contains("impl std::fmt::Display for Enabled {"), "{s}");
+    assert!(s.contains("Self::True => f.write_str(\"true\")"), "{s}");
+}
+
+#[test]
+fn number_const_renders_as_rust_enum() {
+    let out = run_with(ir_for("v3_1-const-number"), serde_json::json!({}));
+    let s = body(file(&out, "src/models.rs"));
+    assert!(s.contains("pub enum Ratio {"), "{s}");
+    assert!(s.contains("V1_5,"), "{s}");
+    // #48: Display writes the numeric literal.
+    assert!(s.contains("impl std::fmt::Display for Ratio {"), "{s}");
+    assert!(s.contains("Self::V1_5 => f.write_str(\"1.5\")"), "{s}");
+}
+
+#[test]
 fn nullable_primitive_property_is_option() {
     let out = run_with(ir_for("nullable-primitive"), serde_json::json!({}));
     let s = body(file(&out, "src/models.rs"));

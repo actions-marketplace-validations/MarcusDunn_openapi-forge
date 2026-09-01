@@ -21,7 +21,7 @@ rust-version = "1.83"
 license = "Apache-2.0 OR MIT"
 
 [workspace.dependencies]
-forge-plugin-sdk = { path = "../crates/forge-plugin-sdk", version = "0.1.0" }
+forge-plugin-sdk = { path = "../crates/forge-plugin-sdk", version = "1.0.2" }
 
 [profile.release]
 lto = "fat"

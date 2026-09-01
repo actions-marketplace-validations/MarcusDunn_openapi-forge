@@ -126,7 +126,8 @@ fn parse_with_resolver(
     let mut ctx = Ctx::with_resolver(file, resolver, main_doc);
     // Cache the main spec's root so structural refs (`#/components/parameters/Page`)
     // can resolve without going back through the resolver.
-    ctx.doc_roots.insert(ctx.current_doc.clone(), root.clone());
+    ctx.doc_roots
+        .insert(ctx.current_doc.clone(), std::sync::Arc::new(root.clone()));
     let mut ptr = Ptr::new();
 
     // 1. Version check.
@@ -315,10 +316,13 @@ fn parse_tags(ctx: &mut Ctx, root: &serde_json::Map<String, J>, ptr: &mut Ptr) -
 /// the per-feature differences are gated inside the walkers.
 const ACCEPTED_VERSION_PREFIXES: &[&str] = &["3.0.", "3.1.", "3.2."];
 
-/// Walk OAS `example` (3.0 single-literal) and `examples` (3.1+ map)
-/// off a schema / parameter / media-type entry. Returns the merged
-/// list with the 3.0 `example` stored under the synthetic key
-/// `"_default"` so generators have one shape to read.
+/// Walk OAS `example` (3.0 single-literal), `examples` (3.1+ keyed
+/// map of Example Objects on parameters / media types), and the
+/// JSON-Schema 2020-12 `examples` array (bare literals on Schema
+/// Objects) off a schema / parameter / media-type entry. Returns the
+/// merged list with the 3.0 `example` stored under the synthetic key
+/// `"_default"` and each array-form element under `"_examples[<i>]"`
+/// so generators have one shape to read.
 ///
 /// `$ref` into `components.examples.<Name>` resolves through the
 /// existing ref machinery. Example values (scalar or compound) are
@@ -409,6 +413,33 @@ pub(crate) fn parse_examples(
                         ));
                         Some(())
                     });
+                });
+            }
+        });
+    }
+    // JSON-Schema 2020-12 array form `examples: [ <literal>, … ]` on a
+    // Schema Object. Each element is a bare literal (no Example Object
+    // wrapper), lowered under the synthetic index-keyed name
+    // `"_examples[<i>]"`, mirroring the `"_default"` key used for the
+    // singular `example` keyword. Parameter / media-type `examples` is
+    // always the keyed-object form handled above, so a JSON array here
+    // only ever originates from a schema.
+    if let Some(J::Array(items)) = map.get("examples") {
+        ptr.with_token("examples", |ptr| {
+            for (i, raw) in items.iter().enumerate() {
+                ptr.with_index(i, |_ptr| {
+                    let value = Some(ctx.values.intern_json(raw));
+                    out.push((
+                        format!("_examples[{i}]"),
+                        Example {
+                            summary: None,
+                            description: None,
+                            value,
+                            external_value: None,
+                            data_value: None,
+                            serialized_value: None,
+                        },
+                    ));
                 });
             }
         });
@@ -1908,6 +1939,74 @@ mod tests {
     }
 
     #[test]
+    fn json_schema_examples_array_lowers_at_schema_and_property_sites() {
+        // JSON-Schema 2020-12 array-form `examples` on a Schema Object
+        // (and on an object property's schema) must reach the IR under
+        // index-keyed synthetic names, alongside the singular `example`.
+        let src = r##"{
+            "openapi":"3.1.0",
+            "info":{"title":"t","version":"1"},
+            "paths":{},
+            "components":{
+                "schemas":{
+                    "ArrayBadSchema":{
+                        "type":"integer","format":"int32",
+                        "examples":["not-an-int", 7]
+                    },
+                    "ObjArrayBadProp":{
+                        "type":"object",
+                        "properties":{
+                            "n":{"type":"integer","format":"int32","examples":["also-not-an-int"]}
+                        },
+                        "required":["n"],
+                        "additionalProperties":false
+                    }
+                }
+            }
+        }"##;
+        let ir = parse_str(src).unwrap().spec.unwrap();
+        // Schema-level array form: one entry per element, index-keyed.
+        let arr = ir.types.iter().find(|t| t.id == "ArrayBadSchema").unwrap();
+        assert_eq!(arr.examples.len(), 2);
+        assert_eq!(arr.examples[0].0, "_examples[0]");
+        let r0 = arr.examples[0].1.value.unwrap() as usize;
+        assert_eq!(ir.values[r0], forge_ir::Value::s("not-an-int"));
+        assert_eq!(arr.examples[1].0, "_examples[1]");
+        let r1 = arr.examples[1].1.value.unwrap() as usize;
+        assert_eq!(ir.values[r1], forge_ir::Value::Int { value: 7 });
+        // Property-level array form reaches `Property.examples`.
+        let obj_ty = ir.types.iter().find(|t| t.id == "ObjArrayBadProp").unwrap();
+        let forge_ir::TypeDef::Object(obj) = &obj_ty.definition else {
+            panic!("expected object");
+        };
+        let n = obj.properties.iter().find(|p| p.name == "n").unwrap();
+        assert_eq!(n.examples.len(), 1);
+        assert_eq!(n.examples[0].0, "_examples[0]");
+        let rp = n.examples[0].1.value.unwrap() as usize;
+        assert_eq!(ir.values[rp], forge_ir::Value::s("also-not-an-int"));
+    }
+
+    #[test]
+    fn singular_example_and_examples_array_coexist() {
+        // A schema may carry both keywords; they land under distinct
+        // synthetic keys without colliding.
+        let src = r##"{
+            "openapi":"3.1.0",
+            "info":{"title":"t","version":"1"},
+            "paths":{},
+            "components":{
+                "schemas":{
+                    "Both":{"type":"string","example":"a","examples":["b","c"]}
+                }
+            }
+        }"##;
+        let ir = parse_str(src).unwrap().spec.unwrap();
+        let both = ir.types.iter().find(|t| t.id == "Both").unwrap();
+        let keys: Vec<&str> = both.examples.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["_default", "_examples[0]", "_examples[1]"]);
+    }
+
+    #[test]
     fn item_schema_populates_item_schema_and_type() {
         // OAS 3.2: itemSchema-only entry. type is set to the item-type
         // ref so non-streaming generators see a usable type;
@@ -2114,6 +2213,52 @@ mod tests {
         let empty = ir.types.iter().find(|t| t.id == "Empty").unwrap();
         let r = empty.default.unwrap() as usize;
         assert_eq!(ir.values[r], forge_ir::Value::Null);
+    }
+
+    #[test]
+    fn empty_and_freeform_schemas_lower_to_any_not_object() {
+        // A schema with no `type` — `{}` or an annotation-only schema — is the
+        // JSON Schema "any" schema (equivalent to boolean `true`, JSON Schema
+        // 2020-12 §4.3.2): it validates ANY instance, not just objects. It must
+        // lower to `TypeDef::Any`, NOT to `{"type":"object"}` (an `Object` with
+        // permissive additionalProperties), which would reject non-object
+        // instances like strings or numbers.
+        let src = r#"{
+            "openapi":"3.1.0",
+            "info":{"title":"t","version":"1"},
+            "paths":{},
+            "components":{
+                "schemas":{
+                    "AnyVal":{},
+                    "OpaqueDoc":{"description":"any JSON value"},
+                    "RealObject":{"type":"object"}
+                }
+            }
+        }"#;
+        let ir = parse_str(src).unwrap().spec.unwrap();
+        let def = |id: &str| {
+            &ir.types
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap_or_else(|| panic!("missing type {id}"))
+                .definition
+        };
+        assert!(
+            matches!(def("AnyVal"), forge_ir::TypeDef::Any),
+            "`{{}}` must lower to Any, got {:?}",
+            def("AnyVal")
+        );
+        assert!(
+            matches!(def("OpaqueDoc"), forge_ir::TypeDef::Any),
+            "an annotation-only schema must lower to Any, got {:?}",
+            def("OpaqueDoc")
+        );
+        // A schema that *does* declare `type: object` stays an object.
+        assert!(
+            matches!(def("RealObject"), forge_ir::TypeDef::Object(_)),
+            "`{{\"type\":\"object\"}}` must stay Object, got {:?}",
+            def("RealObject")
+        );
     }
 
     #[test]

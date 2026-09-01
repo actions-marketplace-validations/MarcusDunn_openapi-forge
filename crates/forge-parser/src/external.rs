@@ -15,13 +15,17 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value;
 
 #[derive(Debug)]
 pub struct LoadedDoc {
     pub canonical_path: PathBuf,
-    pub root: Value,
+    /// Shared handle to the loaded document. Reference-counted so repeated
+    /// loads of the same logical document are a refcount bump, not a deep
+    /// clone of the whole (potentially multi-hundred-KB) JSON tree.
+    pub root: Arc<Value>,
 }
 
 #[derive(Debug)]
@@ -72,8 +76,8 @@ impl fmt::Display for ResolverError {
 pub trait Resolver: fmt::Debug + Send {
     /// Load the document referenced by `raw_ref`, resolved relative to
     /// `current_doc`. Implementations cache by canonical path; repeated
-    /// loads of the same logical document return the same `Value` clone
-    /// without re-reading from disk.
+    /// loads of the same logical document return a shared `Arc` handle to
+    /// the same `Value` without re-reading or re-cloning the JSON tree.
     fn load(&mut self, raw_ref: &str, current_doc: &Path) -> Result<LoadedDoc, ResolverError>;
 }
 
@@ -93,7 +97,7 @@ pub struct FileResolver {
     /// Canonical path to the directory enclosing the input spec. Every
     /// loaded path must canonicalise under this root.
     root: PathBuf,
-    cache: HashMap<PathBuf, Value>,
+    cache: HashMap<PathBuf, Arc<Value>>,
 }
 
 impl FileResolver {
@@ -137,7 +141,7 @@ impl Resolver for FileResolver {
         if let Some(cached) = self.cache.get(&canonical) {
             return Ok(LoadedDoc {
                 canonical_path: canonical,
-                root: cached.clone(),
+                root: Arc::clone(cached),
             });
         }
         let text = std::fs::read_to_string(&canonical).map_err(|e| ResolverError::Io {
@@ -148,7 +152,8 @@ impl Resolver for FileResolver {
             path: canonical.clone(),
             message: e.to_string(),
         })?;
-        self.cache.insert(canonical.clone(), value.clone());
+        let value = Arc::new(value);
+        self.cache.insert(canonical.clone(), Arc::clone(&value));
         Ok(LoadedDoc {
             canonical_path: canonical,
             root: value,

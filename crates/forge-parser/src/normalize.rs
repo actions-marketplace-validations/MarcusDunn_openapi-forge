@@ -8,7 +8,8 @@
 //! object inheritance).
 
 use forge_ir::{
-    AdditionalProperties, NamedType, ObjectConstraints, ObjectType, Property, TypeDef, TypeRef,
+    AdditionalProperties, NamedType, ObjectConstraints, ObjectType, PatternProperty, Property,
+    TypeDef, TypeRef,
 };
 use indexmap::IndexMap;
 use serde_json::Value as J;
@@ -27,6 +28,15 @@ struct Acc {
     /// the original declaration order from sub-parts; deduped on insert.
     required: Vec<String>,
     additional: AdditionalProperties,
+    /// `patternProperties` accumulated across parts, keyed by regex.
+    /// First-occurrence insertion order; a later part re-declaring the
+    /// same regex overwrites the value (and warns on a type conflict),
+    /// mirroring how `properties` coalesce.
+    pattern_properties: IndexMap<String, PatternProperty>,
+    /// `propertyNames` schema. Multiple parts each constrain key names
+    /// (logically an AND); the IR can't express that, so we keep the
+    /// latest non-conflicting one and warn on a conflict.
+    property_names: Option<TypeRef>,
     min_properties: Option<u64>,
     max_properties: Option<u64>,
 }
@@ -37,6 +47,8 @@ impl Acc {
             properties: IndexMap::new(),
             required: Vec::new(),
             additional: AdditionalProperties::Any,
+            pattern_properties: IndexMap::new(),
+            property_names: None,
             min_properties: None,
             max_properties: None,
         }
@@ -119,7 +131,9 @@ pub(crate) fn parse_all_of(
     }
     let obj = ObjectType {
         properties,
+        pattern_properties: acc.pattern_properties.into_values().collect(),
         additional_properties: acc.additional,
+        property_names: acc.property_names,
         constraints: ObjectConstraints {
             min_properties: acc.min_properties,
             max_properties: acc.max_properties,
@@ -200,6 +214,8 @@ fn merge_part(
         }
     }
     acc.additional = restrict_additional(acc.additional.clone(), part_obj.additional_properties);
+    merge_pattern_properties(ctx, ptr, acc, part_obj.pattern_properties);
+    merge_property_names(ctx, ptr, acc, part_obj.property_names);
     if let Some(m) = part_obj.constraints.min_properties {
         acc.min_properties = Some(acc.min_properties.map(|x| x.max(m)).unwrap_or(m));
     }
@@ -207,6 +223,52 @@ fn merge_part(
         acc.max_properties = Some(acc.max_properties.map(|x| x.min(m)).unwrap_or(m));
     }
     Some(part_ref)
+}
+
+/// Union `incoming` `patternProperties` into the accumulator. A regex
+/// already present with a different value type emits `W-ALLOF-CONFLICT`
+/// and the later entry wins (matching `properties` coalescing).
+fn merge_pattern_properties(
+    ctx: &mut Ctx,
+    ptr: &mut Ptr,
+    acc: &mut Acc,
+    incoming: Vec<PatternProperty>,
+) {
+    for pp in incoming {
+        if let Some(existing) = acc.pattern_properties.get(&pp.pattern) {
+            if existing.r#type != pp.r#type {
+                ctx.push_diag(diag::warn(
+                    diag::W_ALLOF_CONFLICT,
+                    format!(
+                        "allOf merge: patternProperties `{}` declared with conflicting types `{}` and `{}`; using the latter",
+                        pp.pattern, existing.r#type, pp.r#type
+                    ),
+                    ptr.loc(ctx.file),
+                ));
+            }
+        }
+        acc.pattern_properties.insert(pp.pattern.clone(), pp);
+    }
+}
+
+/// Fold an `incoming` `propertyNames` schema into the accumulator. The
+/// IR can't express the AND of two key schemas, so a conflicting second
+/// declaration emits `W-ALLOF-CONFLICT` and the later one wins.
+fn merge_property_names(ctx: &mut Ctx, ptr: &mut Ptr, acc: &mut Acc, incoming: Option<TypeRef>) {
+    let Some(t) = incoming else { return };
+    match &acc.property_names {
+        Some(existing) if *existing != t => {
+            ctx.push_diag(diag::warn(
+                diag::W_ALLOF_CONFLICT,
+                format!(
+                    "allOf merge: propertyNames declared with conflicting schemas `{existing}` and `{t}`; using the latter"
+                ),
+                ptr.loc(ctx.file),
+            ));
+        }
+        _ => {}
+    }
+    acc.property_names = Some(t);
 }
 
 /// If the parent schema has sibling `properties`/`required`/etc at the same
@@ -324,6 +386,10 @@ fn merge_inline_object_fields(
         }
         Some(_) => {}
     }
+    let pattern_properties = crate::schema::parse_pattern_properties(ctx, map, ptr, owner_id);
+    merge_pattern_properties(ctx, ptr, acc, pattern_properties);
+    let property_names = crate::schema::parse_property_names(ctx, map, ptr, owner_id);
+    merge_property_names(ctx, ptr, acc, property_names);
 }
 
 /// Most-restrictive merge: `Forbidden` > `Typed` > `Any`. Two `Typed` with

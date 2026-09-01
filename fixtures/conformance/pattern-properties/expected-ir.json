@@ -1,0 +1,61 @@
+{
+  "info": {
+    "title": "pattern-properties",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Patterned",
+      "original_name": "Patterned",
+      "definition": {
+        "def": "object",
+        "properties": [],
+        "pattern_properties": [
+          {
+            "pattern": "^I_",
+            "type": "Patterned_pattern_property__I_"
+          },
+          {
+            "pattern": "^S_",
+            "type": "Patterned_pattern_property__S_"
+          }
+        ],
+        "additional_properties": {
+          "kind": "any"
+        },
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Patterned",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Patterned_pattern_property__I_",
+      "definition": {
+        "def": "primitive",
+        "kind": "integer",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Patterned/patternProperties/^I_",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Patterned_pattern_property__S_",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Patterned/patternProperties/^S_",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

@@ -31,12 +31,16 @@ pub fn render_type_ref(spec: &ir::Ir, type_ref: &ir::TypeRef, namespace: Option<
         | ir::TypeDef::Array(_)
         | ir::TypeDef::EnumString(_)
         | ir::TypeDef::EnumInt(_)
+        | ir::TypeDef::EnumBool(_)
+        | ir::TypeDef::EnumNumber(_)
         | ir::TypeDef::Union(_) => match namespace {
             Some(ns) => format!("{ns}.{}", named_ref(nt)),
             None => named_ref(nt),
         },
         // The bare Null type renders as the TS literal `null`.
         ir::TypeDef::Null => "null".into(),
+        // The "any" schema (`{}` / `true`) accepts any JSON value → `unknown`.
+        ir::TypeDef::Any => "unknown".into(),
     }
 }
 
@@ -130,6 +134,8 @@ pub fn render_named_type(spec: &ir::Ir, nt: &ir::NamedType) -> Option<String> {
         ir::TypeDef::Array(a) => Some(render_array_alias(spec, nt, a)),
         ir::TypeDef::EnumString(e) => Some(render_enum_string(nt, e)),
         ir::TypeDef::EnumInt(e) => Some(render_enum_int(nt, e)),
+        ir::TypeDef::EnumBool(e) => Some(render_enum_bool(nt, e)),
+        ir::TypeDef::EnumNumber(e) => Some(render_enum_number(nt, e)),
         ir::TypeDef::Union(u) => Some(render_union(spec, nt, u)),
         // Bare Null: skip the canonical singleton (no top-level emit). A
         // user-named Null alias (e.g. `components.schemas.Foo: {type:
@@ -146,6 +152,17 @@ pub fn render_named_type(spec: &ir::Ir, nt: &ir::NamedType) -> Option<String> {
                 s.push_str(&format!("export type {name} = null;\n"));
                 Some(s)
             }
+        }
+        // The "any" schema (`{}` / `true`): a named alias emits as
+        // `type Foo = unknown;` (validates any JSON value).
+        ir::TypeDef::Any => {
+            let name = named_ref(nt);
+            let mut s = String::new();
+            if let Some(d) = &nt.description {
+                s.push_str(&jsdoc(d, ""));
+            }
+            s.push_str(&format!("export type {name} = unknown;\n"));
+            Some(s)
         }
     }
 }
@@ -246,6 +263,39 @@ fn render_enum_int(nt: &ir::NamedType, e: &ir::EnumIntType) -> String {
     if let Some(d) = &nt.description {
         s.push_str(&jsdoc(d, ""));
     }
+    let parts: Vec<String> = e.values.iter().map(|v| v.value.to_string()).collect();
+    let mut body = parts.join(" | ");
+    if body.is_empty() {
+        body = "never".into();
+    }
+    s.push_str(&format!("export type {name} = {body};\n"));
+    s
+}
+
+fn render_enum_bool(nt: &ir::NamedType, e: &ir::EnumBoolType) -> String {
+    let name = named_ref(nt);
+    let mut s = String::new();
+    if let Some(d) = &nt.description {
+        s.push_str(&jsdoc(d, ""));
+    }
+    // Boolean literal types: `const: true` → `type Flag = true;`.
+    let parts: Vec<String> = e.values.iter().map(|v| v.value.to_string()).collect();
+    let mut body = parts.join(" | ");
+    if body.is_empty() {
+        body = "never".into();
+    }
+    s.push_str(&format!("export type {name} = {body};\n"));
+    s
+}
+
+fn render_enum_number(nt: &ir::NamedType, e: &ir::EnumNumberType) -> String {
+    let name = named_ref(nt);
+    let mut s = String::new();
+    if let Some(d) = &nt.description {
+        s.push_str(&jsdoc(d, ""));
+    }
+    // Numeric literal types: `const: 1.5` → `type Ratio = 1.5;`. JS has a
+    // single number type, so the `float` / `double` refinement is dropped.
     let parts: Vec<String> = e.values.iter().map(|v| v.value.to_string()).collect();
     let mut body = parts.join(" | ");
     if body.is_empty() {

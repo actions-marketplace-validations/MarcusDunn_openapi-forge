@@ -1,0 +1,27 @@
+{
+  "info": {
+    "title": "v3_1-const-boolean",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Enabled",
+      "original_name": "Enabled",
+      "definition": {
+        "def": "enum-bool",
+        "values": [
+          {
+            "value": true
+          }
+        ]
+      },
+      "location": {
+        "pointer": "/components/schemas/Enabled",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}

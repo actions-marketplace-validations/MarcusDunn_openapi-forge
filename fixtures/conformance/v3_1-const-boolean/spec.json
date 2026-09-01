@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "v3_1-const-boolean", "version": "1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Enabled": { "const": true }
+    }
+  }
+}

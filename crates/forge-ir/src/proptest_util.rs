@@ -9,8 +9,8 @@ use crate::diagnostic::SpecLocation;
 use crate::operation::HttpMethod;
 use crate::types::{
     AdditionalProperties, ArrayConstraints, ArrayType, IntKind, NamedType, ObjectConstraints,
-    ObjectType, PrimitiveConstraints, PrimitiveKind, PrimitiveType, Property, TypeDef, UnionKind,
-    UnionType, UnionVariant, NULL_ID,
+    ObjectType, PatternProperty, PrimitiveConstraints, PrimitiveKind, PrimitiveType, Property,
+    TypeDef, UnionKind, UnionType, UnionVariant, NULL_ID,
 };
 use crate::value::{Value, ValueRef};
 use crate::{ApiInfo, Ir};
@@ -152,14 +152,25 @@ pub fn property() -> impl Strategy<Value = Property> {
         })
 }
 
+pub fn pattern_property() -> impl Strategy<Value = PatternProperty> {
+    (ident(), ident()).prop_map(|(pattern, ty)| PatternProperty {
+        pattern,
+        r#type: ty,
+    })
+}
+
 pub fn object_type() -> impl Strategy<Value = ObjectType> {
     (
         prop::collection::vec(property(), 0..4),
+        prop::collection::vec(pattern_property(), 0..3),
         additional_properties(),
+        prop::option::of(ident()),
     )
-        .prop_map(|(props, ap)| ObjectType {
+        .prop_map(|(props, pats, ap, pn)| ObjectType {
             properties: props,
+            pattern_properties: pats,
             additional_properties: ap,
+            property_names: pn,
             constraints: ObjectConstraints::default(),
         })
 }
@@ -193,6 +204,7 @@ pub fn type_def() -> impl Strategy<Value = TypeDef> {
         object_type().prop_map(TypeDef::Object),
         union_type().prop_map(TypeDef::Union),
         Just(TypeDef::Null),
+        Just(TypeDef::Any),
     ]
 }
 

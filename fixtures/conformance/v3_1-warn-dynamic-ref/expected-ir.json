@@ -9,12 +9,7 @@
       "id": "Bad",
       "original_name": "Bad",
       "definition": {
-        "def": "object",
-        "properties": [],
-        "additional_properties": {
-          "kind": "any"
-        },
-        "constraints": {}
+        "def": "any"
       },
       "location": {
         "pointer": "/components/schemas/Bad",

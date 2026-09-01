@@ -1,0 +1,16 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "pattern-properties", "version": "1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Patterned": {
+        "type": "object",
+        "patternProperties": {
+          "^S_": { "type": "string" },
+          "^I_": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

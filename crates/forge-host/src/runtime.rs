@@ -129,13 +129,43 @@ impl std::fmt::Debug for Engine {
 }
 
 impl Engine {
+    /// Build an engine with no on-disk compilation cache. Every plugin is
+    /// recompiled from scratch on load. Used by tests and the harness where
+    /// a shared cache directory would add cross-run coupling.
     pub fn new() -> Result<Self, EngineError> {
+        Self::build(None)
+    }
+
+    /// Build an engine backed by wasmtime's on-disk compilation cache rooted
+    /// at `cache_dir`. Compiling a plugin component (`Plugin::load_*`) is the
+    /// dominant per-invocation cost — hundreds of milliseconds of Cranelift
+    /// codegen for a multi-MB plugin — and it is pure: a function of the wasm
+    /// bytes, the compiler config, and the wasmtime version. The cache keys on
+    /// exactly those, so a second `forge` run (or a sibling process in a
+    /// parallel regen) deserialises the prior artifact in single-digit
+    /// milliseconds instead of recompiling.
+    ///
+    /// Cache hits never change generated output: the cached entry is the same
+    /// machine code Cranelift would have produced, and wasmtime's own
+    /// version/config fingerprint invalidates stale entries (a wasmtime bump
+    /// simply misses and recompiles).
+    pub fn with_cache(cache_dir: &std::path::Path) -> Result<Self, EngineError> {
+        let mut cc = wasmtime::CacheConfig::new();
+        cc.with_directory(cache_dir);
+        let cache = wasmtime::Cache::new(cc).map_err(|e| EngineError::Cache(e.to_string()))?;
+        Self::build(Some(cache))
+    }
+
+    fn build(cache: Option<wasmtime::Cache>) -> Result<Self, EngineError> {
         let mut cfg = wasmtime::Config::new();
         cfg.wasm_component_model(true)
             .consume_fuel(true)
             .epoch_interruption(true);
         // Determinism: disable nondeterministic relaxed-simd lowerings.
         cfg.relaxed_simd_deterministic(true);
+        if let Some(cache) = cache {
+            cfg.cache(Some(cache));
+        }
 
         let wt = WtEngine::new(&cfg).map_err(|e| EngineError::Init(e.to_string()))?;
 
@@ -160,6 +190,8 @@ impl Engine {
 pub enum EngineError {
     #[error("wasmtime engine init failed: {0}")]
     Init(String),
+    #[error("compilation cache init failed: {0}")]
+    Cache(String),
 }
 
 /// Background thread that increments the engine's epoch counter at a fixed

@@ -645,6 +645,20 @@ fn v3_1_const_renders_as_single_value_literal() {
 }
 
 #[test]
+fn v3_1_const_boolean_renders_as_literal_type() {
+    let out = run_with(ir_for("v3_1-const-boolean"), serde_json::json!({}));
+    let s = body(file(&out, "src/models.ts"));
+    assert!(s.contains("export type Enabled = true;"), "models: {s}");
+}
+
+#[test]
+fn v3_1_const_number_renders_as_literal_type() {
+    let out = run_with(ir_for("v3_1-const-number"), serde_json::json!({}));
+    let s = body(file(&out, "src/models.ts"));
+    assert!(s.contains("export type Ratio = 1.5;"), "models: {s}");
+}
+
+#[test]
 fn v3_1_webhook_does_not_render_as_client_method() {
     let out = run_with(ir_for("v3_1-webhooks"), serde_json::json!({}));
     let client = body(file(&out, "src/client.ts"));

@@ -69,12 +69,28 @@ pub enum TypeDef {
     Array(ArrayType),
     EnumString(EnumStringType),
     EnumInt(EnumIntType),
+    /// A boolean-typed single-value (`const`) or closed set (`enum`). JSON
+    /// Schema `const: true` lowers here with one value; a future
+    /// `enum: [true, false]` would carry both. See issue #107.
+    EnumBool(EnumBoolType),
+    /// A number-typed (non-integer) single-value (`const`) or closed set.
+    /// JSON Schema `const: 1.5` lowers here. Integer consts/enums stay on
+    /// [`TypeDef::EnumInt`]; this variant covers `number`-typed literals.
+    EnumNumber(EnumNumberType),
     Union(UnionType),
     /// JSON's `null` as a unit type. The canonical singleton lives in
     /// [`crate::Ir::types`] under id [`NULL_ID`]; `T | null` is expressed
     /// as a [`UnionType`] whose variants list contains a `Null` reference
     /// (canonicalized to last). See issue #107.
     Null,
+    /// The JSON Schema "any" schema — an empty/freeform schema (`{}`) or the
+    /// boolean schema `true`. It validates *any* instance (object, array,
+    /// string, number, boolean, or null). Per JSON Schema 2020-12 §4.3.2, `{}`
+    /// and `true` are equivalent. Distinct from an [`ObjectType`] with
+    /// permissive `additionalProperties` (`{"type":"object"}`), which validates
+    /// objects only — collapsing the two would reject otherwise-valid
+    /// non-object instances.
+    Any,
 }
 
 /// Canonical pool id for the [`TypeDef::Null`] singleton. See issue #107.
@@ -173,8 +189,36 @@ pub struct ArrayConstraints {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectType {
     pub properties: Vec<Property>,
+    /// JSON Schema `patternProperties` — each entry pairs an ECMA-262
+    /// regex against the schema that property *values* whose name
+    /// matches the regex must satisfy. Orthogonal to `properties`
+    /// (which match by exact name) and to `additional_properties`
+    /// (the fallback for names that match neither). Empty when the
+    /// keyword is absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pattern_properties: Vec<PatternProperty>,
     pub additional_properties: AdditionalProperties,
+    /// JSON Schema `propertyNames` — a schema every property *name* in
+    /// the object must validate against. Names are always strings, so
+    /// this points at a string-shaped type (typically carrying a
+    /// `pattern` / `min_length` / `max_length` constraint). `None`
+    /// when the keyword is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property_names: Option<TypeRef>,
     pub constraints: ObjectConstraints,
+}
+
+/// One entry of JSON Schema `patternProperties`: a property-name regex
+/// paired with the schema that matching property values must satisfy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PatternProperty {
+    /// The raw ECMA-262 regular expression key. Generators targeting a
+    /// non-ECMA regex engine translate it, the same way they do for
+    /// [`PrimitiveConstraints::pattern`].
+    pub pattern: String,
+    /// Schema that values under a matching property name must satisfy.
+    #[serde(rename = "type")]
+    pub r#type: TypeRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -269,6 +313,41 @@ pub struct EnumIntValue {
 pub enum IntKind {
     Int32,
     Int64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumBoolType {
+    pub values: Vec<EnumBoolValue>,
+}
+
+/// One value in a boolean-typed enum. OAS / JSON Schema does not define
+/// per-value documentation; see [`EnumStringValue`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumBoolValue {
+    pub value: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumNumberType {
+    pub values: Vec<EnumNumberValue>,
+    pub kind: NumberKind,
+}
+
+/// One value in a number-typed enum. OAS / JSON Schema does not define
+/// per-value documentation; see [`EnumStringValue`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnumNumberValue {
+    pub value: f64,
+}
+
+/// Width refinement for a number-typed literal, mirroring [`IntKind`].
+/// `format: float` selects [`NumberKind::Float`]; everything else
+/// (including `format: double` and an absent format) is [`NumberKind::Double`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NumberKind {
+    Float,
+    Double,
 }
 
 // ---- unions ----

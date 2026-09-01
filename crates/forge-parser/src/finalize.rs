@@ -62,7 +62,13 @@ pub(crate) fn canonicalize(ir: &mut Ir) -> Vec<Diagnostic> {
 fn refs_of(t: &NamedType) -> Vec<TypeRef> {
     let mut out = Vec::new();
     match &t.definition {
-        TypeDef::Primitive(_) | TypeDef::EnumString(_) | TypeDef::EnumInt(_) | TypeDef::Null => {}
+        TypeDef::Primitive(_)
+        | TypeDef::EnumString(_)
+        | TypeDef::EnumInt(_)
+        | TypeDef::EnumBool(_)
+        | TypeDef::EnumNumber(_)
+        | TypeDef::Null
+        | TypeDef::Any => {}
         TypeDef::Object(o) => {
             for p in &o.properties {
                 out.push(p.r#type.clone());
@@ -312,7 +318,9 @@ mod tests {
                         extensions: vec![],
                     })
                     .collect(),
+                pattern_properties: vec![],
                 additional_properties: AdditionalProperties::Forbidden,
+                property_names: None,
                 constraints: ObjectConstraints::default(),
             }),
             extensions: vec![],

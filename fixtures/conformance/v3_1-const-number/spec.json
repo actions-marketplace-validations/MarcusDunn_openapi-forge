@@ -1,0 +1,10 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "v3_1-const-number", "version": "1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Ratio": { "const": 1.5 }
+    }
+  }
+}

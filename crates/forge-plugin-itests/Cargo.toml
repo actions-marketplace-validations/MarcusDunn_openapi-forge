@@ -28,19 +28,12 @@ real-world = []
 # to `go build` on the generated output. CI runs them via the dedicated
 # `plugin-go-server` job. Tracking issue: #58.
 go-server = []
-# Integration test for the TypeScript-language reference plugin
-# (plugins/generator-typescript-cli). Off by default because the test
-# invokes build.sh — which needs `node` + `npm` and pulls jco /
-# componentize-js / esbuild / typescript into a plugin-local
-# node_modules. The acceptance subtests also `npm install` and `tsc` the
-# generated output. CI runs them via the dedicated `plugin-typescript-cli`
-# job. Tracking issue: #58.
-typescript-cli = []
 
 [dev-dependencies]
 forge-parser = { workspace = true }
 forge-ir = { workspace = true }
 forge-host = { workspace = true }
+forge-pipeline = { workspace = true }
 forge-test-harness = { workspace = true }
 serde_json = { workspace = true }
 pretty_assertions = { workspace = true }

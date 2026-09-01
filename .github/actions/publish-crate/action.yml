@@ -35,16 +35,28 @@ runs:
       run: |
         set -euo pipefail
         # crates.io returns 200 for { name, version } that exists, 404 otherwise.
+        # A descriptive User-Agent is REQUIRED: crates.io now answers UA-less
+        # requests (curl's default included) with 403, which this probe would
+        # misread as "not published" and let `cargo publish` hard-fail with
+        # "already exists" on a re-run after a partial release. See the
+        # v0.1.14 wedge for the failure mode.
         status=$(curl -sS -o /dev/null -w '%{http_code}' \
+          -A "openapi-forge-release (https://github.com/MarcusDunn/openapi-forge)" \
           "https://crates.io/api/v1/crates/${CRATE}/${VERSION}")
         if [ "$status" = "200" ]; then
           echo "already_published=true" >>"$GITHUB_OUTPUT"
-          echo "::notice::${CRATE} ${VERSION} already on crates.io; will package + attest but skip publish."
+          echo "::notice::${CRATE} ${VERSION} already on crates.io; skipping package, attest, and publish."
         else
           echo "already_published=false" >>"$GITHUB_OUTPUT"
         fi
 
+    # Package, attest, and publish are ALL gated on the probe. On a re-run
+    # after a partial release, crates that already landed are skipped
+    # entirely, so re-runs are monotonic: they only ever act on
+    # not-yet-published crates and can never regress by re-attesting a crate
+    # that already succeeded (the v0.1.16 re-attest wedge).
     - name: cargo package ${{ inputs.crate }}
+      if: steps.probe.outputs.already_published == 'false'
       shell: bash
       env:
         CRATE: ${{ inputs.crate }}
@@ -55,13 +67,66 @@ runs:
         CARGO_TARGET_DIR: ${{ github.workspace }}/target
       run: |
         set -euo pipefail
-        if [ -n "$MANIFEST" ]; then
-          cargo package --manifest-path "$MANIFEST" $EXTRA
-        else
-          cargo package -p "$CRATE" $EXTRA
-        fi
+        pkg() {
+          if [ -n "$MANIFEST" ]; then
+            cargo package --manifest-path "$MANIFEST" $EXTRA
+          else
+            cargo package -p "$CRATE" $EXTRA
+          fi
+        }
+        # `cargo package` verifies by building, which resolves this crate's
+        # just-published workspace deps from the sparse index. crates.io's
+        # index is eventually consistent, so a dep published seconds earlier
+        # can be briefly unresolvable ("failed to select a version for ...").
+        # Retry with linear backoff to let the index catch up (the v0.1.16
+        # forge-host race).
+        n=0; max=4
+        until pkg; do
+          n=$((n + 1))
+          if [ "$n" -ge "$max" ]; then
+            echo "::error::cargo package $CRATE failed after $max attempts"
+            exit 1
+          fi
+          echo "::warning::cargo package $CRATE failed (attempt $n/$max); likely crates.io index lag, retrying in $((n * 15))s"
+          sleep $((n * 15))
+        done
 
-    - name: Attest build provenance for ${{ inputs.crate }}
+    # Attestation writes to the public-good Sigstore/Rekor transparency log,
+    # which intermittently returns "error fetching tlog entry - (404)". v4.1.0
+    # is the newest action and does not retry this hard enough, so we retry the
+    # whole step up to 3x with backoff. Duplicate attestations for one subject
+    # are harmless — `gh attestation verify` accepts any valid one. First-party
+    # actions only (no third-party retry wrapper) to keep the SLSA path clean.
+    - name: Attest build provenance for ${{ inputs.crate }} (try 1)
+      id: attest_1
+      if: steps.probe.outputs.already_published == 'false'
+      continue-on-error: true
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-path: ${{ github.workspace }}/target/package/${{ inputs.crate }}-${{ inputs.version }}.crate
+
+    - name: Backoff before attest retry
+      if: steps.probe.outputs.already_published == 'false' && steps.attest_1.outcome == 'failure'
+      shell: bash
+      run: sleep 15
+
+    - name: Attest build provenance for ${{ inputs.crate }} (try 2)
+      id: attest_2
+      if: steps.probe.outputs.already_published == 'false' && steps.attest_1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+      with:
+        subject-path: ${{ github.workspace }}/target/package/${{ inputs.crate }}-${{ inputs.version }}.crate
+
+    - name: Backoff before final attest retry
+      if: steps.probe.outputs.already_published == 'false' && steps.attest_1.outcome == 'failure' && steps.attest_2.outcome == 'failure'
+      shell: bash
+      run: sleep 30
+
+    # Final attempt is NOT continue-on-error: a persistent attestation failure
+    # must still fail the job. We never publish a crate without provenance.
+    - name: Attest build provenance for ${{ inputs.crate }} (try 3)
+      if: steps.probe.outputs.already_published == 'false' && steps.attest_1.outcome == 'failure' && steps.attest_2.outcome == 'failure'
       uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
       with:
         subject-path: ${{ github.workspace }}/target/package/${{ inputs.crate }}-${{ inputs.version }}.crate

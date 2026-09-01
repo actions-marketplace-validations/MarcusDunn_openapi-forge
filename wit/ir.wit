@@ -157,11 +157,21 @@ interface types {
         array(array-type),
         enum-string(enum-string-type),
         enum-int(enum-int-type),
+        // Boolean literal(s): JSON Schema `const: true` (one value) or a
+        // boolean `enum`. See issue #107.
+        enum-bool(enum-bool-type),
+        // Non-integer number literal(s): JSON Schema `const: 1.5`. Integer
+        // literals stay on `enum-int`.
+        enum-number(enum-number-type),
         %union(union-type),
         // JSON's `null` as a unit type. Pool id is "null" (see issue #107).
         // `T | null` is a `union-type` whose variants list contains a Null
         // reference, canonicalized to last.
         %null,
+        // The JSON Schema "any" schema: an empty/freeform schema (`{}`) or
+        // boolean `true`, which validates any instance. Distinct from an
+        // `object` with permissive additional-properties (matches objects only).
+        any,
     }
 
     // ----- primitives -----
@@ -218,8 +228,15 @@ interface types {
 
     record object-type {
         properties: list<property>,
+        pattern-properties: list<pattern-property>,   // patternProperties (regex -> value schema)
         additional-properties: additional-properties,
+        property-names: option<type-ref>,             // propertyNames (schema all keys must satisfy)
         constraints: object-constraints,
+    }
+
+    record pattern-property {
+        pattern: string,                     // raw ECMA-262 property-name regex
+        %type: type-ref,                     // schema matching property values must satisfy
     }
 
     record property {
@@ -268,6 +285,25 @@ interface types {
     }
 
     enum int-kind { int32, int64 }
+
+    record enum-bool-type {
+        values: list<enum-bool-value>,
+    }
+
+    record enum-bool-value {
+        value: bool,
+    }
+
+    record enum-number-type {
+        values: list<enum-number-value>,
+        kind: number-kind,
+    }
+
+    record enum-number-value {
+        value: f64,
+    }
+
+    enum number-kind { float, double }
 
     // ----- unions -----
 

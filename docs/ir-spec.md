@@ -45,7 +45,7 @@ This shape is deliberate (ADR-0006). It has three consequences:
 | Variant      | Meaning                                                      |
 | ------------ | ------------------------------------------------------------ |
 | `Primitive`  | A scalar with a `kind` and optional constraints              |
-| `Object`     | Properties, `required`, `additional_properties` policy       |
+| `Object`     | Properties, `pattern_properties`, `additional_properties`, `property_names` |
 | `Array`      | `items: TypeRef` plus `ArrayConstraints`                     |
 | `Map`        | Like `additional_properties: typed`, but as a top-level type |
 | `EnumString` | Closed set of string values                                  |
@@ -112,6 +112,29 @@ type, not `f64`. `int64` minima and decimal multiples roundtrip cleanly.
 `pattern` is an ECMA-262 regex per JSON Schema. Generators that target
 languages with non-ECMA regex engines (Python's `re`, Rust's `regex`) are
 responsible for translation or for emitting a diagnostic.
+
+### Dynamic object keys
+
+`ObjectType` carries three orthogonal keyword families for keys not listed
+in `properties`, mirroring JSON Schema 2020-12 §10.3.2:
+
+- `pattern_properties` (`patternProperties`, §10.3.2.2) — a list of
+  `{ pattern, type }` entries. `pattern` is a raw ECMA-262 regex (same
+  translation caveat as `PrimitiveConstraints::pattern`); `type` is the
+  schema a value whose key matches the regex must satisfy.
+- `additional_properties` (§10.3.2.3) — the fallback policy for keys that
+  match neither `properties` nor any `pattern_properties` regex.
+- `property_names` (`propertyNames`, §10.3.2.4) — a `TypeRef` every
+  property *name* must validate against. Names are always strings, so the
+  parser defaults a typeless `propertyNames` schema (e.g.
+  `{ "pattern": "^[A-Za-z_]\w*$" }`) to a string primitive, preserving the
+  `pattern` / `min_length` / `max_length` / `format` it carries. A boolean
+  `propertyNames` schema carries no string shape and lowers to `None`.
+
+The three are independent: an object can constrain known properties, pattern
+buckets, the additional fallback, and the legal key alphabet all at once.
+`allOf` flattening unions `pattern_properties` across parts and keeps the
+last `property_names` (warning via `parser/W-ALLOF-CONFLICT` on a mismatch).
 
 ## Extensions
 

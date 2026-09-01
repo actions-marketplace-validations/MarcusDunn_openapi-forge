@@ -1,0 +1,23 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "pattern-properties-allof-conflict", "version": "1" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Conflicting": {
+        "allOf": [
+          {
+            "type": "object",
+            "patternProperties": { "^x-": { "type": "string" } },
+            "propertyNames": { "pattern": "^a" }
+          },
+          {
+            "type": "object",
+            "patternProperties": { "^x-": { "type": "integer" } },
+            "propertyNames": { "pattern": "^b" }
+          }
+        ]
+      }
+    }
+  }
+}

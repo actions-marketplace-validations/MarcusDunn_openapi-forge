@@ -318,9 +318,16 @@ Pin by digest for reproducible builds:
 oci = "ghcr.io/<you>/my-generator@sha256:abc123…"
 ```
 
+Private registries work through the Docker credential store: if
+`docker pull` from your registry works (`docker login`, or a credential
+helper such as `docker-credential-ecr-login` for Amazon ECR), so does
+`forge` — including podman's `containers/auth.json` on machines where
+`docker` is really podman. Private `ghcr.io` packages additionally
+resolve via a `gh` CLI login or `GH_TOKEN`/`GITHUB_TOKEN`.
+
 Pulled artifacts are cached under
 `$XDG_CACHE_HOME/openapi-forge/plugins/`. See ADR-0010 for the cache
-layout and v1 limitations (anonymous registries only).
+layout and auth details.
 
 ## Determinism
 
@@ -340,28 +347,18 @@ that compiles to a wasip2 component matching the `code-generator` or
 the CLI uses — no Rust required. `forge-plugin-sdk` is a Rust-side
 ergonomic layer over the WIT, not the contract itself.
 
-Two non-Rust references live in tree:
+One non-Rust reference lives in tree:
 
 - **`plugins/generator-go-server/`** — Go via TinyGo +
   `go.bytecodealliance.org/cmd/wit-bindgen-go`. Emits a minimal `net/http`
   server scaffold; itest shells `go build` on the output. Smallest
   cross-language footprint (~1 MB component).
-- **`plugins/generator-typescript-cli/`** — TypeScript via
-  [jco](https://github.com/bytecodealliance/jco) +
-  [componentize-js](https://github.com/bytecodealliance/ComponentizeJS).
-  Emits a `commander`-based CLI client per spec — kebab-case
-  subcommands, typed param parsing with enum `choices`, env-var auth.
-  Larger component (~12 MB; the StarlingMonkey JS runtime is the floor)
-  but the developer experience inside the plugin is closest to writing
-  ordinary node code.
 
-Each plugin's `README.md` documents its toolchain pin and build flow. The
-integration tests
-(`crates/forge-plugin-itests/tests/generator_{go_server,typescript_cli}.rs`,
-gated behind the `go-server` and `typescript-cli` features respectively)
-load the resulting `.wasm` through `PluginRunner::load` — the same path
-the CLI takes — and exercise the output with the target language's
-toolchain (`go build`, `npm install` + `tsc` + `node ... --help`).
+The plugin's `README.md` documents its toolchain pin and build flow. The
+integration test (`crates/forge-plugin-itests/tests/generator_go_server.rs`,
+gated behind the `go-server` feature) loads the resulting `.wasm` through
+`PluginRunner::load` — the same path the CLI takes — and exercises the
+output with the target language's toolchain (`go build`).
 
 Tracking issue for the broader cross-language push (publishing
 `forge-test-harness`, lifting invariants out of the Rust SDK into a

@@ -22,9 +22,9 @@ members = [
 exclude = ["crates/forge-plugin-sdk", "plugins", "fuzz"]
 
 [workspace.package]
-version = "0.1.13"
+version = "1.0.2"
 edition = "2021"
-rust-version = "1.87"
+rust-version = "1.93"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/marcusdunn/openapi-forge"
 authors = ["OpenAPI Forge contributors"]
@@ -41,12 +41,12 @@ all = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 # Internal
-forge-ir = { path = "crates/forge-ir", version = "0.1.13" }
-forge-ir-bindgen = { path = "crates/forge-ir-bindgen", version = "0.1.13" }
-forge-parser = { path = "crates/forge-parser", version = "0.1.13" }
-forge-host = { path = "crates/forge-host", version = "0.1.13" }
-forge-pipeline = { path = "crates/forge-pipeline", version = "0.1.13" }
-forge-test-harness = { path = "crates/forge-test-harness", version = "0.1.13" }
+forge-ir = { path = "crates/forge-ir", version = "1.0.2" }
+forge-ir-bindgen = { path = "crates/forge-ir-bindgen", version = "1.0.2" }
+forge-parser = { path = "crates/forge-parser", version = "1.0.2" }
+forge-host = { path = "crates/forge-host", version = "1.0.2" }
+forge-pipeline = { path = "crates/forge-pipeline", version = "1.0.2" }
+forge-test-harness = { path = "crates/forge-test-harness", version = "1.0.2" }
 
 # Core
 serde = { version = "1.0", features = ["derive"] }
@@ -63,15 +63,15 @@ clap = { version = "4.5", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # Spec navigation
-jsonptr = "0.7"
+jsonptr = "0.8"
 
 # JSON Schema validation (used by forge-cli to validate plugin config blocks
 # against each plugin's `config_schema()` before invoking the stage).
-jsonschema = { version = "0.46", default-features = false }
+jsonschema = { version = "0.49", default-features = false }
 
 # WASM toolchain
-wasmtime = { version = "44", default-features = false, features = ["component-model", "cranelift", "runtime", "std", "addr2line", "demangle", "parallel-compilation"] }
-wasmtime-wasi = "44"
+wasmtime = { version = "45", default-features = false, features = ["component-model", "cranelift", "runtime", "std", "addr2line", "demangle", "parallel-compilation", "cache"] }
+wasmtime-wasi = "45"
 wit-bindgen = "0.36"
 wit-bindgen-rt = "0.36"
 

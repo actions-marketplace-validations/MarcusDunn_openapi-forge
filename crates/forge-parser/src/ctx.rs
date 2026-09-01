@@ -43,7 +43,7 @@ pub(crate) struct Ctx<'a> {
     /// Cached root values for every loaded external document. Lets the
     /// schema walker resolve fragment-only refs (`#/Owner`) inside an
     /// already-loaded doc without going back through the resolver.
-    pub doc_roots: HashMap<PathBuf, serde_json::Value>,
+    pub doc_roots: HashMap<PathBuf, std::sync::Arc<serde_json::Value>>,
     /// Doc-stem prefix per loaded external document. The main spec maps
     /// to an empty string (no prefix).
     pub doc_prefix: HashMap<PathBuf, String>,
@@ -189,7 +189,9 @@ mod tests {
             xml: None,
             definition: TypeDef::Object(ObjectType {
                 properties: vec![],
+                pattern_properties: vec![],
                 additional_properties: AdditionalProperties::Forbidden,
+                property_names: None,
                 constraints: ObjectConstraints::default(),
             }),
             extensions: vec![],

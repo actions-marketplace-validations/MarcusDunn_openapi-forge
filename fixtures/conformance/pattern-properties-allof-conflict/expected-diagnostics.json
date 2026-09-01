@@ -1,0 +1,20 @@
+[
+  {
+    "severity": "warning",
+    "code": "parser/W-ALLOF-CONFLICT",
+    "message": "allOf merge: patternProperties `^x-` declared with conflicting types `Conflicting_allof_part_0_pattern_property__x_` and `Conflicting_allof_part_1_pattern_property__x_`; using the latter",
+    "location": {
+      "pointer": "/components/schemas/Conflicting/allOf/1",
+      "file": "spec.json"
+    }
+  },
+  {
+    "severity": "warning",
+    "code": "parser/W-ALLOF-CONFLICT",
+    "message": "allOf merge: propertyNames declared with conflicting schemas `Conflicting_allof_part_0_property_names` and `Conflicting_allof_part_1_property_names`; using the latter",
+    "location": {
+      "pointer": "/components/schemas/Conflicting/allOf/1",
+      "file": "spec.json"
+    }
+  }
+]

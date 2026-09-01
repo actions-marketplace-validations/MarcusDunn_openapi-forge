@@ -1,0 +1,42 @@
+{
+  "info": {
+    "title": "property-names",
+    "version": "1"
+  },
+  "operations": [],
+  "types": [
+    {
+      "id": "Tokenized",
+      "original_name": "Tokenized",
+      "definition": {
+        "def": "object",
+        "properties": [],
+        "additional_properties": {
+          "kind": "any"
+        },
+        "property_names": "Tokenized_property_names",
+        "constraints": {}
+      },
+      "location": {
+        "pointer": "/components/schemas/Tokenized",
+        "file": "spec.json"
+      }
+    },
+    {
+      "id": "Tokenized_property_names",
+      "definition": {
+        "def": "primitive",
+        "kind": "string",
+        "constraints": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      },
+      "location": {
+        "pointer": "/components/schemas/Tokenized/propertyNames",
+        "file": "spec.json"
+      }
+    }
+  ],
+  "security_schemes": [],
+  "servers": []
+}
