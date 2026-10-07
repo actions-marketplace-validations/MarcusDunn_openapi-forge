@@ -47,7 +47,7 @@ jobs:
     outputs:
       version: ${{ steps.versions.outputs.version }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve target version
         id: versions
@@ -117,7 +117,7 @@ jobs:
       VERSION: ${{ needs.verify.outputs.version }}
       DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -246,7 +246,7 @@ jobs:
     env:
       VERSION: ${{ needs.verify.outputs.version }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
@@ -353,7 +353,7 @@ jobs:
       VERSION: ${{ needs.verify.outputs.version }}
       MEDIA_TYPE: application/vnd.bytecodealliance.wasm.component.layer.v0+wasm
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # OCI repository names must be lowercase, but ${{ github.repository_owner }}
       # preserves the literal case (e.g. "MarcusDunn"), which oras rejects as
@@ -375,7 +375,7 @@ jobs:
           cargo build --release --target wasm32-wasip2 \
             --manifest-path plugins/${{ matrix.plugin }}/Cargo.toml
 
-      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
 
       - name: Login to GHCR
         env:
@@ -445,7 +445,7 @@ jobs:
       # PR will not run CI. Acceptable here — the bump is mechanical
       # (version-only changes) and the next push to the branch will run CI
       # if anyone needs to re-verify before merging.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
@@ -455,7 +455,7 @@ jobs:
       # cargo-edit, which would fail because cargo-edit's deps require
       # rust >=1.88 and rust-toolchain.toml pins this repo to 1.87.
       - name: Install cargo-edit
-        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-edit
 
